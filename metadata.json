@@ -1,0 +1,6 @@
+{
+  "name": "VoxCart",
+  "description": "A fully bilingual English & Urdu voice-activated shopping assistant with secure backend data storage, custom currencies, secret admin capabilities, and offline optimization.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
