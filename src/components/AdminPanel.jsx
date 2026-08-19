@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { TRANSLATIONS, formatPrice } from "../utils/localizer";
 import { api } from "../utils/api";
+import { validateStrongPassword } from "../utils/passwordValidator";
 import { 
   Trash, 
   Edit3, 
@@ -28,7 +29,13 @@ import {
   Loader2,
   ImageIcon,
   FolderPlus,
-  RefreshCw
+  RefreshCw,
+  MessageSquare,
+  Send,
+  Star,
+  Clock,
+  ShieldAlert,
+  MessageCircle
 } from "lucide-react";
 import MasterSettings from "./MasterSettings";
 
@@ -59,6 +66,13 @@ export default function AdminPanel({
 
   // User list state
   const [userList, setUserList] = useState([]);
+
+  // Feedback & Complaint state
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [feedbackFilter, setFeedbackFilter] = useState("all");
+  const [replyingItem, setReplyingItem] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
   
   // Password Visibility Maps
   const [showPasswordMap, setShowPasswordMap] = useState({});
@@ -197,12 +211,50 @@ export default function AdminPanel({
     localStorage.setItem("voxcart_draft_newUserForm", JSON.stringify(newUserForm));
   }, [newUserForm]);
 
-  // Load metrics, users, and all relational database tables on mount or product updates
+  // Load metrics, users, feedback, and all relational database tables on mount or product updates
   useEffect(() => {
     fetchDashStats();
     fetchUsersDirectory();
+    fetchFeedbackItems();
     fetchAllRelationalData();
   }, [products]);
+
+  const fetchFeedbackItems = async () => {
+    try {
+      const items = await api.getFeedback();
+      setFeedbackList(Array.isArray(items) ? items : []);
+    } catch (e) {
+      console.warn("Could not retrieve feedback items", e);
+    }
+  };
+
+  const handleAdminReplySubmit = async (e) => {
+    e.preventDefault();
+    if (!replyingItem || !replyText.trim()) return;
+    setSendingReply(true);
+    try {
+      await api.replyFeedback(replyingItem.id, replyText.trim());
+      onNotify("Response sent to user successfully!", "success");
+      setReplyingItem(null);
+      setReplyText("");
+      fetchFeedbackItems();
+    } catch (err) {
+      onNotify(err.message || "Failed to submit reply", "error");
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const handleDeleteFeedbackItem = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this feedback entry?")) return;
+    try {
+      await api.deleteFeedback(id);
+      onNotify("Feedback entry deleted.", "success");
+      fetchFeedbackItems();
+    } catch (err) {
+      onNotify(err.message || "Failed to delete feedback entry", "error");
+    }
+  };
 
   const fetchDashStats = async () => {
     try {
@@ -907,6 +959,12 @@ export default function AdminPanel({
       return;
     }
 
+    const passCheck = validateStrongPassword(newUserForm.password);
+    if (!passCheck.valid) {
+      onNotify(passCheck.message, "error");
+      return;
+    }
+
     try {
       await api.createAdminUser(newUserForm);
       onNotify(`Successfully registered user "${newUserForm.name}" inside system!`, "success");
@@ -1133,6 +1191,22 @@ export default function AdminPanel({
             }`}
           >
             Users ({userList.length})
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab("feedback")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 select-none cursor-pointer flex items-center gap-1.5 ${
+              activeSubTab === "feedback" 
+                ? "bg-emerald-500 text-slate-950 shadow-md font-black" 
+                : "text-white/60 hover:text-white"
+            }`}
+          >
+            <span>💬 Feedback</span>
+            {feedbackList.filter(f => f.status === "Pending").length > 0 && (
+              <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                {feedbackList.filter(f => f.status === "Pending").length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1510,7 +1584,7 @@ export default function AdminPanel({
                       type="button"
                       onClick={() => setProdForm(prev => ({ ...prev, img: "" }))}
                       className="absolute top-1.5 right-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded-full p-1 cursor-pointer transition shadow"
-                      title="Clear picture"
+                      title="Remove picture"
                     >
                       <Trash size={10} />
                     </button>
@@ -2062,6 +2136,179 @@ export default function AdminPanel({
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ================= SUBTAB 5: FEEDBACK & COMPLAINTS MANAGEMENT ================= */}
+      {activeSubTab === "feedback" && (
+        <div className="flex flex-col gap-6 animate-slide-in font-display">
+          {/* Top Filter Chips & Action Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={18} className="text-emerald-400" />
+              <h3 className="font-bold text-sm text-white">Feedback & Complaint Submissions</h3>
+              <span className="text-xs bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded-full border border-emerald-500/20">
+                {feedbackList.length} Total
+              </span>
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/60 p-1 rounded-xl border border-white/10 text-xs font-bold">
+              {["all", "pending", "replied", "complaint", "feedback", "suggestion"].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setFeedbackFilter(filter)}
+                  className={`px-3 py-1 rounded-lg capitalize transition cursor-pointer ${
+                    feedbackFilter === filter
+                      ? "bg-emerald-500 text-slate-950 font-black"
+                      : "text-white/60 hover:text-white"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Feedback Items List */}
+          {feedbackList.length === 0 ? (
+            <div className="p-12 text-center text-white/40 text-xs bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center gap-2">
+              <MessageSquare size={32} className="text-white/20" />
+              <p>No feedback or complaints submitted yet.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {feedbackList
+                .filter((item) => {
+                  if (feedbackFilter === "pending") return item.status === "Pending";
+                  if (feedbackFilter === "replied") return item.status === "Replied";
+                  if (feedbackFilter === "complaint") return item.type === "complaint";
+                  if (feedbackFilter === "feedback") return item.type === "feedback";
+                  if (feedbackFilter === "suggestion") return item.type === "suggestion";
+                  return true;
+                })
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-4 shadow-xl hover:border-emerald-500/30 transition-all"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                            item.type === "complaint"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : item.type === "suggestion"
+                              ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                              : "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                          }`}
+                        >
+                          {item.type}
+                        </span>
+
+                        <span
+                          className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full flex items-center gap-1 ${
+                            item.status === "Replied"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              : "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
+                          }`}
+                        >
+                          {item.status === "Replied" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                          <span>{item.status}</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-xs text-white/50 font-mono">
+                        <span>{item.userName} ({item.userEmail})</span>
+                        <span>•</span>
+                        <span>{new Date(item.createdAt).toLocaleString()}</span>
+                        <button
+                          onClick={() => handleDeleteFeedbackItem(item.id)}
+                          className="text-white/30 hover:text-red-400 p-1 transition cursor-pointer"
+                          title="Delete entry"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Subject & Body */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-extrabold text-sm text-white">{item.subject}</h4>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star
+                              key={s}
+                              size={12}
+                              className={s <= item.rating ? "fill-amber-400 text-amber-400" : "text-white/20"}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-xs text-white/80 leading-relaxed bg-black/30 p-3.5 rounded-xl border border-white/5">
+                        {item.message}
+                      </p>
+                    </div>
+
+                    {/* Existing Response or Reply Box */}
+                    {item.adminResponse ? (
+                      <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between text-xs text-emerald-400 font-bold">
+                          <span>Your Response:</span>
+                          <span className="text-[10px] text-white/40 font-mono">
+                            {item.repliedAt ? new Date(item.repliedAt).toLocaleString() : ""}
+                          </span>
+                        </div>
+                        <p className="text-xs text-white/90 leading-relaxed pl-3 border-l-2 border-emerald-500">
+                          {item.adminResponse}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        {replyingItem?.id === item.id ? (
+                          <form onSubmit={handleAdminReplySubmit} className="flex flex-col gap-2 bg-white/5 p-3 rounded-xl border border-emerald-500/30">
+                            <label className="text-xs font-bold text-emerald-400">Write Staff Response:</label>
+                            <textarea
+                              rows={3}
+                              required
+                              placeholder="Write a clear response to this user..."
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-xs text-white outline-none focus:border-emerald-500"
+                            />
+                            <div className="flex items-center gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => { setReplyingItem(null); setReplyText(""); }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white/60 hover:text-white cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={sendingReply}
+                                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow transition cursor-pointer flex items-center gap-1"
+                              >
+                                {sendingReply ? "Sending..." : "Send Reply"}
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <button
+                            onClick={() => { setReplyingItem(item); setReplyText(""); }}
+                            className="text-xs font-bold bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 w-fit"
+                          >
+                            <Send size={12} />
+                            <span>Reply to Customer</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>

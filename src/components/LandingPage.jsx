@@ -10,12 +10,17 @@ import {
   Globe, 
   ShieldCheck, 
   Layers, 
-  Lightbulb, 
+  Lightbulb,
   Zap, 
   ArrowRight,
   Database,
   Search,
-  ShoppingCart
+  ShoppingCart,
+  Bot,
+  MessageSquare,
+  ScanLine,
+  MessageSquareQuote,
+  ChefHat
 } from "lucide-react";
 
 export default function LandingPage({ lang, onGetStarted, currency = "USD" }) {
@@ -193,6 +198,371 @@ export default function LandingPage({ lang, onGetStarted, currency = "USD" }) {
               <div className="flex items-center justify-between border-t border-white/5 pt-3">
                 <span className="text-[11px] font-mono text-purple-400 font-extrabold tracking-wider">SECURE PARSING PIPELINE</span>
                 <span className="text-xs">🎙️✨</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        {/* ================= VOXBOT AI CHATBOT - ABOUT SECTION ================= */}
+        <section id="voxbot-about" className="py-12 border-t border-white/5 flex flex-col gap-12 relative overflow-hidden">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-purple-500/10 rounded-full blur-[140px] pointer-events-none" />
+
+          <div className="text-center flex flex-col items-center gap-3 relative z-10">
+            <div className="inline-flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full text-purple-300 text-xs font-bold tracking-widest uppercase shadow-lg shadow-purple-500/5">
+              <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-purple-400/50 bg-purple-900/60 flex items-center justify-center">
+                <Bot size={12} className="text-purple-300" />
+              </div>
+              <span>{isUr ? "ووکس بوٹ AI اسسٹنٹ" : "VoxBot AI Chatbot Engine"}</span>
+            </div>
+            <h2 className="text-3xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-purple-300 via-indigo-200 to-purple-400 bg-clip-text text-transparent">
+              {isUr ? "ووکس بوٹ — آپ کا 24/7 سمارٹ AI شاپنگ اسسٹنٹ" : "Meet VoxBot — Your 24/7 AI-Powered Shopping Assistant"}
+            </h2>
+            <p className="text-white/60 text-sm md:text-base max-w-3xl leading-relaxed">
+              {isUr ? (
+                "ووکس بوٹ ووکس کارٹ کا ایک جدید اور ذہین چیٹ بوٹ ہے جو آپ کی ہر شاپنگ ضرورت کو سمجھتا ہے۔ یہ اردو اور انگریزی دونوں زبانوں میں روانی سے گفتگو کرتا ہے، مصنوعات تلاش کرتا ہے، ترکیبیں بتاتا ہے، اور کارٹ کو تیزی سے منظم کرتا ہے۔"
+              ) : (
+                "VoxBot is an intelligent, bilingual conversational assistant built into VoxCart. Powered by advanced Gemini AI, VoxBot understands colloquial English and Urdu, searches store inventory, recommends recipes, checks product pricing, and modifies your shopping cart dynamically through natural conversation."
+              )}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+            {/* Capability Cards Grid (Lg: col-span-7) */}
+            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Card 1 */}
+              <div className="p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-purple-500/30 transition-all flex flex-col gap-3 group">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform">
+                  <Search size={20} />
+                </div>
+                <h3 className="font-extrabold text-base text-white">{isUr ? "مصنوعات کی اسمارٹ تلاش" : "Smart Catalog Search"}</h3>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  {isUr ? "کیٹلاگ میں قیمت، زمرہ یا برانڈ کے مطابق فوری تلاش کریں اور دستیاب ذخیرہ چیک کریں۔" : "Instant inventory search with price comparisons, category filters, and live stock availability checks."}
+                </p>
+              </div>
+
+              {/* Card 2 */}
+              <div className="p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-indigo-500/30 transition-all flex flex-col gap-3 group">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                  <Globe size={20} />
+                </div>
+                <h3 className="font-extrabold text-base text-white">{isUr ? "اردو اور انگریزی سپورٹ" : "Bilingual AI Chat"}</h3>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  {isUr ? "اردو اور انگریزی میں فطری طور پر سوالات پوچھیں اور فوری جوابات حاصل کریں۔" : "Communicate naturally in English or Urdu (مکمل اردو سپورٹ) without complex query syntax."}
+                </p>
+              </div>
+
+              {/* Card 3 */}
+              <div className="p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-emerald-500/30 transition-all flex flex-col gap-3 group">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                  <Sparkles size={20} />
+                </div>
+                <h3 className="font-extrabold text-base text-white">{isUr ? "ترکیب اور اجزاء کا اخراج" : "Recipe-to-Cart Assistance"}</h3>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  {isUr ? "کسی بھی ڈش کا نام بولیں (جیسے چکن بریانی) اور تمام ضروری اجزاء کو ایک کلک سے کارٹ میں لائیں۔" : "Ask for any meal recipe, get exact quantity listings, and pull required ingredients straight into your basket."}
+                </p>
+              </div>
+
+              {/* Card 4 */}
+              <div className="p-5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-amber-500/30 transition-all flex flex-col gap-3 group">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform">
+                  <ShoppingCart size={20} />
+                </div>
+                <h3 className="font-extrabold text-base text-white">{isUr ? "خودکار کارٹ آپریشنز" : "Direct Cart Actions"}</h3>
+                <p className="text-xs text-white/60 leading-relaxed">
+                  {isUr ? "اشیاء کارٹ میں شامل کریں، مقدار تبدیل کریں، کل بل کا حساب لگائیں، اور چیک آؤٹ کریں۔" : "Add or remove items, adjust weights, calculate live totals in multiple currencies, and proceed to order."}
+                </p>
+              </div>
+            </div>
+
+            {/* Simulated Chat Interface & 3D Character Avatar Card (Lg: col-span-5) */}
+            <div className="lg:col-span-5 bg-slate-900/90 border border-purple-500/20 rounded-2xl p-5 flex flex-col gap-4 shadow-2xl relative overflow-hidden">
+              {/* Full Character Spotlight Header */}
+              <div className="relative rounded-xl overflow-hidden bg-gradient-to-b from-purple-950/60 via-slate-900 to-slate-950 border border-purple-500/30 p-4 flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 border border-cyan-400/50 shadow-[0_0_20px_rgba(168,85,247,0.35)] flex items-center justify-center shrink-0 group hover:scale-105 transition duration-300">
+                  <Bot className="w-10 h-10 text-white drop-shadow-md" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded-full w-fit">
+                    {isUr ? "اے آئی شاپنگ اسسٹنٹ" : "AI Shopping Assistant"}
+                  </span>
+                  <h4 className="text-lg font-black text-white flex items-center gap-2">
+                    <span>VoxBot AI</span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
+                  </h4>
+                  <p className="text-xs text-white/60 leading-tight">
+                    {isUr ? "آپ کا والکس کارٹ سمارٹ اسسٹنٹ" : "Your dedicated, intelligent VoxCart shopping companion"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-purple-900/80 border border-purple-500/40 flex items-center justify-center shrink-0">
+                    <Bot className="w-5 h-5 text-purple-300" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>VoxBot AI</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    </h4>
+                    <p className="text-[10px] text-white/50">{isUr ? "آن لائن — Gemini AI کا پاورڈ" : "Online — Powered by Gemini AI"}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
+                  {isUr ? "24/7 فعال" : "24/7 Active"}
+                </span>
+              </div>
+
+              {/* Sample Messages Bubble */}
+              <div className="flex flex-col gap-3 my-1">
+                <div className="self-end bg-purple-600/30 border border-purple-500/30 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[85%] font-medium">
+                  {isUr ? "مجھے بریانی کے لیے اجزاء چاہیے اور ساتھ 2 کلو ٹماٹر بھی شامل کر دیں۔" : "Show me fresh milk and tomatoes in stock with prices."}
+                </div>
+                <div className="self-start bg-white/5 border border-white/10 text-white/90 text-xs p-3 rounded-2xl rounded-tl-none max-w-[90%] flex flex-col gap-2">
+                  <p className="leading-relaxed">
+                    {isUr ? "جی بالکل! میں نے کیٹلاگ سے 'Whole Milk' (Rs 1,100) اور 2 کلو 'Tomatoes' (Rs 1,400) تلاش کر لیے ہیں۔ کیا آپ انہیں کارٹ میں شامل کرنا چاہتے ہیں؟" : "Found 2 matching items in store catalog: Whole Milk (Rs 1,100) and Fresh Tomatoes (Rs 700/kg). Would you like me to add them to your cart?"}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button 
+                      onClick={onGetStarted}
+                      className="text-[10px] bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold px-2.5 py-1 rounded-lg transition cursor-pointer"
+                    >
+                      {isUr ? "کارٹ میں شامل کریں" : "+ Add 2 Items to Cart"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-white/50">
+                <span className="flex items-center gap-1">
+                  <MessageSquare size={12} className="text-purple-400" />
+                  <span>{isUr ? "نچلے کونے میں چیٹ کا نشان دبائیں" : "Click floating icon to chat anytime"}</span>
+                </span>
+                <button
+                  onClick={onGetStarted}
+                  className="text-xs text-purple-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{isUr ? "ابھی بات چیت کریں" : "Try VoxBot Now"}</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        {/* ================= CORE HIGHLIGHT FEATURES SECTION (Bill Scanner, Feedback, Recipe Dropdown) ================= */}
+        <section id="core-features-section" className="py-12 border-t border-white/5 flex flex-col gap-10 relative overflow-hidden">
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-r from-purple-600/10 via-indigo-600/10 to-pink-600/10 rounded-full blur-[140px] pointer-events-none" />
+
+          <div className="text-center flex flex-col items-center gap-3 relative z-10">
+            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/30 px-4 py-1.5 rounded-full text-purple-300 text-xs font-bold tracking-widest uppercase shadow-lg shadow-purple-500/5">
+              <Sparkles size={14} className="text-purple-400 animate-pulse" />
+              <span>{isUr ? "اہم فیچرز کی تفصیلی معلومات" : "Featured Homepage Capabilities"}</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight bg-gradient-to-r from-purple-300 via-indigo-200 to-purple-400 bg-clip-text text-transparent">
+              {isUr ? "بل اسکینر، فیڈ بیک اور ریسپی ڈراپ ڈاؤن" : "Bill Scanner, Customer Feedback & Recipe Dropdown"}
+            </h2>
+            <p className="text-white/70 text-sm md:text-base max-w-3xl leading-relaxed">
+              {isUr ? (
+                "جانیں کہ یہ تینوں اہم فیچرز کس مقصد کے لیے بنائے گئے ہیں اور آپ کی روزمرہ شاپنگ، فیڈ بیک کی فراہمی اور مزیدار پکوانوں کی تیاری میں کس طرح فائدہ مند ہیں۔"
+              ) : (
+                "Detailed breakdown of how the Bill Scanner, Customer Feedback portal, and Recipe Dropdown operate to simplify bill understanding, facilitate user feedback, and provide easy recipe access."
+              )}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
+            {/* 1. BILL SCANNER */}
+            <div className="p-7 rounded-3xl bg-slate-900/80 hover:bg-slate-900/95 border border-purple-500/30 hover:border-purple-400/60 transition-all duration-300 flex flex-col justify-between gap-6 shadow-2xl hover:shadow-purple-500/10 group relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all" />
+              
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/15 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-lg group-hover:scale-110 transition-transform">
+                    <ScanLine size={28} />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-full">
+                    {isUr ? "کاغذی بل اسکینر" : "Bill Scanner"}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-2xl font-black text-white group-hover:text-purple-200 transition-colors">
+                    {isUr ? "1. بل اسکینر (Bill Scanner)" : "1. Bill Scanner"}
+                  </h3>
+                  <p className="text-xs text-purple-300/80 font-semibold mt-1">
+                    {isUr ? "پرانی کاغذی رسیدوں کا خودکار تجزیہ اور آسان فہم" : "Easily Scan, Understand & Digitized Physical Bills"}
+                  </p>
+                </div>
+
+                {/* Purpose */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                    <Zap size={12} />
+                    {isUr ? "مقصد (Purpose):" : "Purpose:"}
+                  </span>
+                  <p className="text-xs text-white/80 leading-relaxed">
+                    {isUr ? (
+                      "بل اسکینر کا مقصد صارفین کو کاغذی بلوں اور رسیدوں کو آسانی سے اسکین کرنے اور ان کی تفصیلات (اشیاء، تعداد اور قیمتوں) کو بغیر کسی زحمت کے سمجھنے کی سہولت فراہم کرنا ہے۔"
+                    ) : (
+                      "The Bill Scanner is designed to allow users to easily scan, read, and understand their paper bills, store checkout receipts, or invoice slips using optical OCR intelligence."
+                    )}
+                  </p>
+                </div>
+
+                {/* Benefits */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle size={12} />
+                    {isUr ? "صارفین کے لیے فوائد (How Users Benefit):" : "How Users Benefit:"}
+                  </span>
+                  <ul className="text-xs text-white/80 leading-relaxed flex flex-col gap-1.5 list-disc list-inside">
+                    <li>
+                      {isUr ? "ٹائپنگ کیے بغیر بل کی تمام اشیاء خودکار طور پر ڈیجیٹل لسٹ میں تبدیل ہو جاتی ہیں۔" : "Easily scan paper bills without typing product names manually line-by-line."}
+                    </li>
+                    <li>
+                      {isUr ? "بل میں موجود قیمتوں، تعداد اور کل اخراجات کو واضح طور پر سمجھیں۔" : "Clearly understand bill breakdowns, individual item prices, and calculated totals."}
+                    </li>
+                    <li>
+                      {isUr ? "اسٹور کیٹلاگ کے ساتھ لائیو مماثلت کے بعد آسان ریویو لسٹ سے ڈائریکٹ کارٹ میں شامل کریں۔" : "Match scanned items to store catalog and confirm additions with 1-click 'Add to Cart'."}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-white/50">
+                <span className="text-[11px] font-mono text-purple-300">VOX-OCR ENGINE</span>
+                <span className="text-xs text-purple-400 font-bold">📸 📄 🛒</span>
+              </div>
+            </div>
+
+            {/* 2. FEEDBACK */}
+            <div className="p-7 rounded-3xl bg-slate-900/80 hover:bg-slate-900/95 border border-indigo-500/30 hover:border-indigo-400/60 transition-all duration-300 flex flex-col justify-between gap-6 shadow-2xl hover:shadow-indigo-500/10 group relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all" />
+
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/15 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shadow-lg group-hover:scale-110 transition-transform">
+                    <MessageSquareQuote size={28} />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full">
+                    {isUr ? "کسٹمر پورٹل" : "User Portal"}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-2xl font-black text-white group-hover:text-indigo-200 transition-colors">
+                    {isUr ? "2. فیڈ بیک سیکشن (Feedback)" : "2. Customer Feedback Portal"}
+                  </h3>
+                  <p className="text-xs text-indigo-300/80 font-semibold mt-1">
+                    {isUr ? "تجاویز، تبصرے اور رائے شیئر کرنے کا آسان راستہ" : "Simple Way for Users to Share Suggestions & Comments"}
+                  </p>
+                </div>
+
+                {/* Purpose */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+                    <Zap size={12} />
+                    {isUr ? "مقصد (Purpose):" : "Purpose:"}
+                  </span>
+                  <p className="text-xs text-white/80 leading-relaxed">
+                    {isUr ? (
+                      "فیڈ بیک سیکشن کا مقصد صارفین کو اپنی تجاویز، رائے، تبصرے، درجہ بندی یا درپیش مسائل شیئر کرنے کا ایک انتہائی سادہ اور شفاف طریقہ فراہم کرنا ہے۔"
+                    ) : (
+                      "The Feedback section provides a simple, direct, and user-friendly way for shoppers to share their suggestions, comments, reviews, or report difficulties."
+                    )}
+                  </p>
+                </div>
+
+                {/* Benefits */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle size={12} />
+                    {isUr ? "صارفین کے لیے فوائد (How Users Benefit):" : "How Users Benefit:"}
+                  </span>
+                  <ul className="text-xs text-white/80 leading-relaxed flex flex-col gap-1.5 list-disc list-inside">
+                    <li>
+                      {isUr ? "نئے مصنوعات یا فیچرز کی فرمائش براہ راست سپورٹ ٹیم تک پہنچائیں۔" : "Easily submit feature ideas or request new grocery items."}
+                    </li>
+                    <li>
+                      {isUr ? "اپنے بھیجے گئے فیڈ بیک پر ایڈمن کے لائیو جوابات اور اسٹیٹس (Resolved) ٹریک کریں۔" : "View verified official admin responses and resolution status updates."}
+                    </li>
+                    <li>
+                      {isUr ? "آپ کے تاثرات سے صوتی اسسٹنٹ اور ویب سائٹ کا تجربہ مسلسل بہتر ہوتا ہے۔" : "Help continuously refine voice shopping accuracy and overall user experience."}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-white/50">
+                <span className="text-[11px] font-mono text-indigo-300">COMMUNITY-VOICE</span>
+                <span className="text-xs text-indigo-400 font-bold">💬 ⭐ 📢</span>
+              </div>
+            </div>
+
+            {/* 3. RECIPE DROPDOWN */}
+            <div className="p-7 rounded-3xl bg-slate-900/80 hover:bg-slate-900/95 border border-emerald-500/30 hover:border-emerald-400/60 transition-all duration-300 flex flex-col justify-between gap-6 shadow-2xl hover:shadow-emerald-500/10 group relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all" />
+
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-lg group-hover:scale-110 transition-transform">
+                    <ChefHat size={28} />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full">
+                    {isUr ? "ریسپی اسسٹنٹ" : "Recipe Dropdown"}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-2xl font-black text-white group-hover:text-emerald-200 transition-colors">
+                    {isUr ? "3. ریسپی ڈراپ ڈاؤن (Recipe Dropdown)" : "3. Recipe Dropdown"}
+                  </h3>
+                  <p className="text-xs text-emerald-300/80 font-semibold mt-1">
+                    {isUr ? "ترکیبیں تلاش کرنے اور ان تک رسائی حاصل کرنے کا آسان ڈراپ ڈاؤن" : "Easy Way to Explore, Search & Access Meal Recipes"}
+                  </p>
+                </div>
+
+                {/* Purpose */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <Zap size={12} />
+                    {isUr ? "مقصد (Purpose):" : "Purpose:"}
+                  </span>
+                  <p className="text-xs text-white/80 leading-relaxed">
+                    {isUr ? (
+                      "ریسپی ڈراپ ڈاؤن کا مقصد صارفین کو مختلف پکوانوں (جیسے چکن بریانی، پاستا، پیزا، کڑاہی وغیرہ) کو تلاش کرنے، دیکھنے اور ان کے اجزاء تک آسانی سے رسائی حاصل کرنے کا آسان طریقہ فراہم کرنا ہے۔"
+                    ) : (
+                      "The Recipe Dropdown offers an easy interactive way for shoppers to explore, search, and access a rich library of delicious meal recipes."
+                    )}
+                  </p>
+                </div>
+
+                {/* Benefits */}
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle size={12} />
+                    {isUr ? "صارفین کے لیے فوائد (How Users Benefit):" : "How Users Benefit:"}
+                  </span>
+                  <ul className="text-xs text-white/80 leading-relaxed flex flex-col gap-1.5 list-disc list-inside">
+                    <li>
+                      {isUr ? "کسی بھی ڈش کی ترکیب، ضروری اجزاء اور پکانے کا طریقہ ایک کلک پر دیکھیں۔" : "Effortlessly explore new recipes and access step-by-step cooking guides."}
+                    </li>
+                    <li>
+                      {isUr ? "اسٹور کیٹلاگ سے تمام ضروری اجزاء کی لائیو قیمت اور موجودگی چیک کریں۔" : "Check real-time ingredient availability and prices from store inventory."}
+                    </li>
+                    <li>
+                      {isUr ? "الگ الگ اشیاء تلاش کیے بغیر تمام مطلوبہ اجزاء کو ایک کلک سے کارٹ میں شامل کریں۔" : "Auto-add all required recipe ingredients straight into the shopping cart in 1-click."}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-white/50">
+                <span className="text-[11px] font-mono text-emerald-300">CULINARY-DROPDOWN</span>
+                <span className="text-xs text-emerald-400 font-bold">🍲 🥗 🛒</span>
               </div>
             </div>
           </div>

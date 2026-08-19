@@ -572,6 +572,78 @@
         "productId": 21,
         "qty": 1
       }
+    ],
+    "usr_6a7de9341f45d": [
+      {
+        "productId": 13,
+        "qty": 1,
+        "name": "Chicken Breast",
+        "nameUr": "مرغی کا گوشت",
+        "price": 2237.2,
+        "unit": "KG",
+        "unitUr": "کلو",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 19,
+        "qty": 1,
+        "name": "White Rice",
+        "nameUr": "چاول",
+        "price": 837.2,
+        "unit": "KG",
+        "unitUr": "کلو",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 10,
+        "qty": 1,
+        "name": "Potatoes",
+        "nameUr": "آلو",
+        "price": 361.2,
+        "unit": "KG",
+        "unitUr": "کلو",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 11,
+        "qty": 1,
+        "name": "Onions",
+        "nameUr": "پیاز",
+        "price": 333.2,
+        "unit": "KG",
+        "unitUr": "کلو",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 9,
+        "qty": 1,
+        "name": "Tomatoes",
+        "nameUr": "ٹماٹر",
+        "price": 697.2,
+        "unit": "KG",
+        "unitUr": "کلو",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 21,
+        "qty": 1,
+        "name": "Cooking Oil",
+        "nameUr": "ککنگ آئل",
+        "price": 2517.2,
+        "unit": "Piece",
+        "unitUr": "عدد",
+        "currencyCode": "PKR"
+      },
+      {
+        "productId": 23,
+        "qty": 1,
+        "name": "Salt",
+        "nameUr": "نمک",
+        "price": 361.2,
+        "unit": "Pack",
+        "unitUr": "پیکٹ",
+        "currencyCode": "PKR"
+      }
     ]
   },
   "favourites": {},
@@ -882,5 +954,18 @@
       "timestamp": "2026-07-08T06:24:20.369Z"
     }
   ],
-  "userCategories": {}
+  "userCategories": {
+    "usr_6a7de9341f45d": [
+      {
+        "id": "user_cat_artisanal_bakery",
+        "name": "Artisanal Bakery",
+        "nameUr": "تازہ بیکری",
+        "icon": "🥐",
+        "description": "Auto-extracted by VoxBot AI based on: \"all bakery items\"",
+        "extractedAt": "2026-08-19T10:46:48.815Z",
+        "sourceQuery": "all bakery items"
+      }
+    ]
+  },
+  "feedback": []
 }

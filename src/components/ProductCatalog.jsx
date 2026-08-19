@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { TRANSLATIONS, formatPrice } from "../utils/localizer";
-import { Search, Heart, ShoppingCart, Sparkles, Send, Keyboard, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Heart, ShoppingCart, Sparkles, Send, Keyboard, ChevronDown, Check, ChevronLeft, ChevronRight, Plus, X, Tag, Package, Info, ShieldCheck } from "lucide-react";
 import { parseVoiceCommand } from "../utils/voiceParser";
 import { api } from "../utils/api";
 
@@ -27,6 +27,63 @@ export default function ProductCatalog({
   const [loadingItems, setLoadingItems] = useState(true);
   const [smartSearchResult, setSmartSearchResult] = useState(null);
   const [isSmartSearching, setIsSmartSearching] = useState(false);
+  const [recipePersons, setRecipePersons] = useState(4);
+  const [manualProductName, setManualProductName] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [modalQty, setModalQty] = useState(1);
+  const [activeModalImage, setActiveModalImage] = useState(null);
+
+  const handleAddManualProductToRecipe = () => {
+    if (!manualProductName || !manualProductName.trim()) return;
+    const queryTerm = manualProductName.trim().toLowerCase();
+    
+    // Find matching product in database
+    const match = products.find(p => 
+      p.name.toLowerCase().includes(queryTerm) || 
+      (p.nameUr && p.nameUr.includes(queryTerm)) ||
+      queryTerm.includes(p.name.toLowerCase())
+    );
+
+    const storeUnitPrice = match ? ((match.salePrice && match.salePrice > 0) ? match.salePrice : match.price) : 250;
+    const unit = match ? match.unit : "pack";
+    const unitUr = match ? match.unitUr : "پیکٹ";
+
+    const newIng = {
+      productId: match ? match.id : null,
+      name: match ? match.name : manualProductName.trim(),
+      nameUr: match ? match.nameUr : manualProductName.trim(),
+      category: match ? match.category : "Pantry",
+      price: storeUnitPrice,
+      storeUnitPrice: storeUnitPrice,
+      qty: unit === "g" || unit === "ml" ? 250 : 1,
+      unit: unit,
+      unitUr: unitUr,
+      matched: !!match,
+      currencyCode: match ? (match.currencyCode || match.currency || "PKR") : "PKR"
+    };
+
+    setSmartSearchResult(prev => {
+      if (!prev || !prev.recipeIngredients) return prev;
+      return {
+        ...prev,
+        recipeIngredients: [...prev.recipeIngredients, newIng]
+      };
+    });
+
+    setManualProductName("");
+    const msg = lang === "ur"
+      ? `"${newIng.nameUr}" ریسپی کے اجزاء میں شامل کر دیا گیا!`
+      : `Added "${newIng.name}" to recipe ingredients!`;
+    onNotify(msg, "success");
+  };
+
+  // Sync recipePersons when new recipe is loaded
+  useEffect(() => {
+    if (smartSearchResult && smartSearchResult.type === "recipe") {
+      const match = String(smartSearchResult.servings || "").match(/\d+/);
+      setRecipePersons(match ? parseInt(match[0], 10) : 4);
+    }
+  }, [smartSearchResult]);
 
   // Helper to convert parsed items into recipe review structure
   const convertParsedItemsToRecipe = (parsedItems, rawQuery) => {
@@ -66,7 +123,7 @@ export default function ProductCatalog({
       setIsSmartSearching(true);
       try {
         const response = await api.smartSearch(clean, lang);
-        if (response && (response.type === "recipe" || response.type === "filter")) {
+        if (response && response.type === "filter") {
           setSmartSearchResult(response);
         } else {
           setSmartSearchResult(null);
@@ -279,7 +336,7 @@ export default function ProductCatalog({
     return matchesCategory && matchesSubcategory && (nameMatch || urNameMatch || categoryMatch);
   });
 
-  // Handle manual typing product phrases (e.g. "3 eggs, whole milk")
+  // Handle manual typing product phrases (e.g. "3 eggs, whole milk") or recipe queries
   const handleTypingSubmit = async (e) => {
     e.preventDefault();
     const cleanCmd = typedCommand.trim();
@@ -287,46 +344,8 @@ export default function ProductCatalog({
 
     setIsSmartSearching(true);
 
-    // 1. First check voice parser for multi-item or quantity typing e.g. "3 milk, 2 butter", "5 eggs", "add 2 bread"
+    // 1. Check if typed command is a clear cart command
     const parsed = parseVoiceCommand(cleanCmd, products);
-    if (parsed && parsed.action === "update_items" && parsed.items && parsed.items.length > 0) {
-      const resolvedItems = [];
-      const addedNames = [];
-
-      parsed.items.forEach(item => {
-        let prod = products.find(p => String(p.id) === String(item.productId));
-        if (!prod && item.name) {
-          const searchName = item.name.toLowerCase();
-          prod = products.find(p => 
-            p.name.toLowerCase() === searchName || 
-            p.name.toLowerCase().includes(searchName) || 
-            (p.nameUr && p.nameUr.includes(searchName))
-          );
-        }
-        if (prod && prod.status !== "Inactive" && prod.status !== "Unavailable") {
-          resolvedItems.push({
-            productId: prod.id,
-            qty: item.qty || 1,
-            action: item.action || "add"
-          });
-          addedNames.push(`${item.qty || 1} ${lang === "ur" ? (prod.nameUr || prod.name) : prod.name}`);
-        }
-      });
-
-      if (resolvedItems.length > 0) {
-        if (onAddItems) {
-          onAddItems(resolvedItems);
-        }
-        const msg = lang === "ur"
-          ? `کارٹ میں شامل کر دیا گیا: ${addedNames.join(", ")}`
-          : `Added to cart: ${addedNames.join(", ")}`;
-        if (onNotify) onNotify(msg, "success");
-        setTypedCommand("");
-        setIsSmartSearching(false);
-        return;
-      }
-    }
-
     if (parsed && parsed.action === "clear") {
       if (onAddItems) {
         onAddItems([{ action: "clear" }]);
@@ -338,40 +357,38 @@ export default function ProductCatalog({
       return;
     }
 
-    // 2. Direct single product lookup by name or Urdu name
-    const lowerCmd = cleanCmd.toLowerCase();
-    const directMatch = products.find(p => 
-      p.status !== "Inactive" && p.status !== "Unavailable" &&
-      (p.name.toLowerCase() === lowerCmd || 
-       p.name.toLowerCase().includes(lowerCmd) || 
-       (p.nameUr && p.nameUr.toLowerCase().includes(lowerCmd)))
-    );
-
-    if (directMatch) {
-      if (onAddItems) {
-        onAddItems([{ productId: directMatch.id, qty: 1, action: "add" }]);
-      }
-      const msg = lang === "ur"
-        ? `کارٹ میں شامل کر دیا گیا: ${directMatch.nameUr || directMatch.name}`
-        : `Added to cart: ${directMatch.name}`;
-      if (onNotify) onNotify(msg, "success");
-      setTypedCommand("");
-      setIsSmartSearching(false);
-      return;
-    }
-
-    // 3. Fallback to smart search or recipe search
+    // 2. Perform smart search or recipe lookup without auto-adding to cart
     try {
       const response = await api.smartSearch(cleanCmd, lang);
-      if (response && (response.type === "recipe" || response.type === "filter")) {
+      if (response && response.type === "filter") {
         setSmartSearchResult(response);
         setSearchTerm(cleanCmd);
       } else {
         setSearchTerm(cleanCmd);
+        setSmartSearchResult(null);
       }
     } catch (err) {
       setSearchTerm(cleanCmd);
     }
+
+    // 3. If in bulk mode and multi-items detected, pre-fill draft quantities so user can review/add
+    if (parsed && parsed.action === "update_items" && parsed.items && parsed.items.length > 0) {
+      const newBulkQty = { ...bulkQuantities };
+      parsed.items.forEach(item => {
+        if (item.productId && item.qty > 0) {
+          newBulkQty[item.productId] = (newBulkQty[item.productId] || 0) + item.qty;
+        }
+      });
+      setBulkQuantities(newBulkQty);
+      if (!bulkMode) {
+        setBulkMode(true);
+      }
+      const notifyMsg = lang === "ur"
+        ? "اشیاء تلاش میں ملیں۔ مقدار چک کریں اور 'Add to Cart' پر کلک کریں۔"
+        : "Products matched for review! Check quantities and click 'Add to Cart'.";
+      if (onNotify) onNotify(notifyMsg, "info");
+    }
+
     setTypedCommand("");
     setIsSmartSearching(false);
   };
@@ -482,6 +499,7 @@ export default function ProductCatalog({
           </div>
         </div>
 
+
         {/* Subcategory Row (shown if current category has subcategories) */}
         {activeCategory !== "All" && (() => {
           const currentCatObj = dbCategories.find(c => c.name === activeCategory || c.id === activeCategory);
@@ -533,41 +551,6 @@ export default function ProductCatalog({
         })()}
       </div>
 
-      {/* NEW Typing Quick Add Command Option bar */}
-      <div className="bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-indigo-950/40 backdrop-blur-xl border border-purple-500/15 rounded-2xl p-4 md:p-5">
-        <form onSubmit={handleTypingSubmit} className="flex flex-col sm:flex-row items-center gap-4 justify-between">
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <div className="p-2.5 bg-purple-400/10 text-purple-300 rounded-xl border border-purple-400/20">
-              <Keyboard size={20} className="animate-pulse" />
-            </div>
-            <div>
-              <h4 className="text-white font-bold text-sm tracking-tight">
-                {lang === "ur" ? "ٹائپ کر کے کارٹ میں شامل کریں" : "Add to Cart by Typing"}
-              </h4>
-              <p className="text-2xs text-purple-300 font-medium">
-                {lang === "ur" ? "کسی بھی ترکیب کا نام ٹائپ کریں اور مطلوبہ اشیاء حاصل کریں۔" : "Type any recipe and get the required items."}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 w-full sm:w-96">
-            <input
-              type="text"
-              value={typedCommand}
-              onChange={(e) => setTypedCommand(e.target.value)}
-              placeholder={lang === "ur" ? "کسی بھی ترکیب کا نام ٹائپ کریں (مثال: Biryani)..." : "Type any recipe and get the required items..."}
-              className="w-full bg-black/45 border border-white/10 focus:border-purple-400 focus:bg-black/60 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition"
-              dir={lang === "ur" ? "rtl" : "ltr"}
-            />
-            <button
-              type="submit"
-              className="bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold p-3 rounded-xl transition cursor-pointer active:scale-95"
-            >
-              <Send size={15} />
-            </button>
-          </div>
-        </form>
-      </div>
 
       {/* NEW: Interactive Multi-Product Bulk Selection Dashboard */}
       <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -612,7 +595,7 @@ export default function ProductCatalog({
                 onClick={() => {
                   const itemsToSubmit = Object.entries(bulkQuantities)
                     .filter(([_, qty]) => qty > 0)
-                    .map(([id, qty]) => ({ productId: parseInt(id), qty }));
+                    .map(([id, qty]) => ({ productId: isNaN(Number(id)) ? id : Number(id), qty, action: "add" }));
                   
                   if (itemsToSubmit.length === 0) return;
                   onAddItems(itemsToSubmit);
@@ -622,7 +605,7 @@ export default function ProductCatalog({
                   const successMsg = lang === "ur" 
                     ? "تمام منتخب کردہ اشیاء کامیابی سے کارٹ میں شامل کر دی گئیں!" 
                     : "All selected products successfully added to your cart!";
-                  alert(successMsg);
+                  onNotify(successMsg, "success");
                 }}
                 className="px-4 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-slate-950 flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95 select-none"
               >
@@ -634,12 +617,12 @@ export default function ProductCatalog({
         </div>
       </div>
 
-      {/* Universal Smart Search: Recipe Assistant Panel */}
+      {/* Universal Smart Search: Searching Products indicator */}
       {isSmartSearching && (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center animate-pulse flex flex-col items-center justify-center gap-3">
-          <Sparkles className="text-purple-400 animate-spin" size={24} />
-          <p className="text-sm text-purple-300 font-medium">
-            {lang === "ur" ? "سمارٹ سرچ ترکیب کا تجزیہ کر رہی ہے..." : "Smart search is analyzing recipe ingredients..."}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center animate-pulse flex items-center justify-center gap-2">
+          <Sparkles className="text-purple-400 animate-spin" size={18} />
+          <p className="text-xs text-purple-300 font-medium">
+            {lang === "ur" ? "مصنوعات کی تلاش جاری ہے..." : "Searching store catalog..."}
           </p>
         </div>
       )}
@@ -664,112 +647,267 @@ export default function ProductCatalog({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const toAdd = smartSearchResult.recipeIngredients
-                    .filter(ing => ing.matched && ing.productId)
-                    .map(ing => ({
-                      productId: ing.productId,
-                      qty: ing.qty || 1,
-                      name: ing.name,
-                      nameUr: ing.nameUr,
-                      price: ing.price,
-                      action: "add"
-                    }));
+            {/* PERSONS / SERVINGS SCALER STEPPER */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 bg-purple-950/60 border border-purple-500/30 px-3.5 py-1.5 rounded-2xl shadow-inner">
+                <span className="text-xs font-bold text-purple-200 uppercase tracking-wider flex items-center gap-1">
+                  <span>👥</span>
+                  <span>{lang === "ur" ? "افراد:" : "Persons:"}</span>
+                </span>
+                <div className="flex items-center gap-1 bg-slate-900/80 border border-purple-400/30 rounded-xl p-1">
+                  <button
+                    type="button"
+                    onClick={() => setRecipePersons(p => Math.max(1, p - 1))}
+                    className="w-7 h-7 flex items-center justify-center bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 rounded-lg text-sm font-bold transition active:scale-90 cursor-pointer select-none"
+                    title={lang === "ur" ? "کم کریں" : "Decrease persons"}
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center font-extrabold text-sm text-amber-300 select-none">
+                    {recipePersons}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRecipePersons(p => p + 1)}
+                    className="w-7 h-7 flex items-center justify-center bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 rounded-lg text-sm font-bold transition active:scale-90 cursor-pointer select-none"
+                    title={lang === "ur" ? "زیادہ کریں" : "Increase persons"}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
 
-                  if (toAdd.length > 0) {
-                    onAddItems(toAdd);
-                    const msg = lang === "ur"
-                      ? `ترکیب کے تمام ${toAdd.length} دستیاب اجزاء کارٹ میں شامل کر دیے گئے ہیں!`
-                      : `Successfully added all ${toAdd.length} available ingredients for "${smartSearchResult.recipeName}" to your cart!`;
-                    onNotify(msg, "success");
-                  } else {
-                    onNotify(lang === "ur" ? "کوئی دستیاب جزو نہیں ملا۔" : "No available store products found for this recipe.", "warning");
-                  }
-                }}
-                className="px-5 py-2.5 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-purple-500/15 transition cursor-pointer active:scale-95 flex items-center gap-2 shrink-0"
-              >
-                <ShoppingCart size={14} />
-                {lang === "ur" ? "تمام اجزاء شامل کریں" : "Add All to Cart"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const basePersons = parseInt(smartSearchResult.servings) || 4;
+                    const scale = recipePersons / basePersons;
 
-              <button
-                type="button"
-                onClick={() => setSearchTerm("")}
-                className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white font-bold text-xs rounded-xl border border-white/5 transition cursor-pointer"
-              >
-                {lang === "ur" ? "بند کریں" : "Clear Search"}
-              </button>
+                    const toAdd = [];
+                    let unavailCount = 0;
+
+                    smartSearchResult.recipeIngredients.forEach((ing, idx) => {
+                      let matchedProd = null;
+                      if (ing.productId) {
+                        matchedProd = products.find(p => String(p.id) === String(ing.productId));
+                      }
+                      if (!matchedProd && ing.name) {
+                        matchedProd = products.find(p => p.name.toLowerCase().includes(ing.name.toLowerCase()) || (ing.nameUr && p.nameUr && p.nameUr.includes(ing.nameUr)));
+                      }
+
+                      const isAvailable = !!(
+                        matchedProd &&
+                        matchedProd.status !== "Inactive" &&
+                        matchedProd.status !== "Unavailable" &&
+                        (matchedProd.stockQuantity === undefined || matchedProd.stockQuantity > 0) &&
+                        matchedProd.price > 0 &&
+                        ing.matched !== false
+                      );
+
+                      if (!isAvailable) {
+                        unavailCount++;
+                        return;
+                      }
+
+                      let rawBaseQty = (typeof ing.qty === "number" && ing.qty > 0) ? ing.qty : (parseFloat(ing.qty) || 1);
+                      if (!rawBaseQty || rawBaseQty <= 0) rawBaseQty = 1;
+                      let unit = ing.unit || (matchedProd ? matchedProd.unit : "pack");
+
+                      if (unit === "g" || unit === "gram" || unit === "grams") {
+                        if (rawBaseQty >= 10) rawBaseQty = rawBaseQty / 1000;
+                        unit = "kg";
+                      } else if (unit === "ml" || unit === "milliliter" || unit === "milliliters" || unit === "ملی لیٹر") {
+                        if (rawBaseQty >= 10) rawBaseQty = rawBaseQty / 1000;
+                        unit = "liter";
+                      }
+
+                      if ((unit === "piece" || unit === "pcs" || unit === "pack" || unit === "dozen" || unit === "bottle" || unit === "box" || unit === "unit") && rawBaseQty > 10) {
+                        rawBaseQty = 2;
+                      }
+
+                      let scaledQty = Math.max(1, Math.round(rawBaseQty * scale));
+                      if (!scaledQty || scaledQty <= 0) scaledQty = 1;
+                      let storeCartQty = scaledQty;
+
+                      let rawPrice = (matchedProd.salePrice && matchedProd.salePrice > 0) ? matchedProd.salePrice : matchedProd.price;
+                      const storeUnitPrice = (rawPrice && rawPrice > 0) ? rawPrice : 280;
+
+                      toAdd.push({
+                        productId: matchedProd.id,
+                        qty: storeCartQty,
+                        name: matchedProd.name,
+                        nameUr: matchedProd.nameUr,
+                        price: storeUnitPrice,
+                        currencyCode: matchedProd.currencyCode || matchedProd.currency || "PKR",
+                        action: "add"
+                      });
+                    });
+
+                    if (toAdd.length > 0) {
+                      onAddItems(toAdd);
+                      const recipeTitle = lang === "ur" ? (smartSearchResult.recipeNameUr || smartSearchResult.recipeName) : smartSearchResult.recipeName;
+                      const msg = unavailCount > 0
+                        ? (lang === "ur"
+                            ? `ترکیب کے ${toAdd.length} دستیاب اجزاء کارٹ میں شامل کر دیے گئے۔ (${unavailCount} غیر دستیاب)`
+                            : `Added ${toAdd.length} available ingredients for "${recipeTitle}" to cart. (${unavailCount} items Unavailable)`)
+                        : (lang === "ur"
+                            ? `ترکیب کے تمام ${toAdd.length} اجزاء (${recipePersons} افراد کے لیے) کارٹ میں شامل کر دیے گئے ہیں!`
+                            : `Successfully added all ${toAdd.length} ingredients for "${recipeTitle}" (${recipePersons} persons) to your cart!`);
+                      onNotify(msg, unavailCount > 0 ? "warning" : "success");
+                    } else {
+                      onNotify(lang === "ur" ? "ترکیب کے تمام اجزاء فی الحال غیر دستیاب ہیں۔" : "All required ingredients for this recipe are currently Unavailable.", "warning");
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-purple-500/15 transition cursor-pointer active:scale-95 flex items-center gap-2 shrink-0"
+                >
+                  <ShoppingCart size={14} />
+                  {lang === "ur" ? `تمام دستیاب اجزاء شامل کریں (${recipePersons} افراد)` : `Add Available (${recipePersons} persons)`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white font-bold text-xs rounded-xl border border-white/5 transition cursor-pointer"
+                >
+                  {lang === "ur" ? "بند کریں" : "Clear Search"}
+                </button>
+              </div>
             </div>
           </div>
 
           <div>
-            <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider mb-4">
-              {lang === "ur" ? "درکار پروڈکٹس اور دستیابی:" : "Required Products & Store Availability:"}
-            </h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-xs font-bold text-white/40 uppercase tracking-wider">
+                {lang === "ur"
+                  ? `درکار تمام اجزاء (${smartSearchResult.recipeIngredients.length} آیتمز - ${recipePersons} افراد کے لیے مائیکرو اسکیلڈ):`
+                  : `Complete Recipe Ingredients (${smartSearchResult.recipeIngredients.length} Items - Scaled for ${recipePersons} Persons):`}
+              </h4>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {smartSearchResult.recipeIngredients.map((ing, idx) => {
-                const isMatched = ing.matched && ing.productId;
+                let matchedProd = null;
+                if (ing.productId) {
+                  matchedProd = products.find(p => String(p.id) === String(ing.productId));
+                }
+                if (!matchedProd && ing.name) {
+                  matchedProd = products.find(p => p.name.toLowerCase().includes(ing.name.toLowerCase()) || (ing.nameUr && p.nameUr && p.nameUr.includes(ing.nameUr)));
+                }
+
+                const isAvailable = !!(
+                  matchedProd &&
+                  matchedProd.status !== "Inactive" &&
+                  matchedProd.status !== "Unavailable" &&
+                  (matchedProd.stockQuantity === undefined || matchedProd.stockQuantity > 0) &&
+                  matchedProd.price > 0 &&
+                  ing.matched !== false
+                );
+                const resolvedProductId = isAvailable ? matchedProd.id : (idx + 1);
+
+                const basePersons = parseInt(smartSearchResult.servings) || 4;
+                const scale = recipePersons / basePersons;
+
+                let rawBaseQty = (typeof ing.qty === "number" && ing.qty > 0) ? ing.qty : (parseFloat(ing.qty) || 1);
+                if (!rawBaseQty || rawBaseQty <= 0) rawBaseQty = 1;
+                let unit = isAvailable ? (ing.unit || matchedProd.unit || "pack") : (ing.unit || "pack");
+                let unitUr = isAvailable ? (ing.unitUr || matchedProd.unitUr || "پیکٹ") : (ing.unitUr || "پیکٹ");
+
+                // Convert grams to kg, and ml to liter for accurate pricing & display
+                if (unit === "g" || unit === "gram" || unit === "grams") {
+                  if (rawBaseQty >= 10) {
+                    rawBaseQty = rawBaseQty / 1000;
+                  }
+                  unit = "kg";
+                  unitUr = "کلو";
+                } else if (unit === "ml" || unit === "milliliter" || unit === "milliliters" || unit === "ملی لیٹر") {
+                  if (rawBaseQty >= 10) {
+                    rawBaseQty = rawBaseQty / 1000;
+                  }
+                  unit = "liter";
+                  unitUr = "لیٹر";
+                }
+
+                // Clamp unrealistically huge counts for discrete piece/pack units (e.g. prevent 500 onions)
+                if ((unit === "piece" || unit === "pcs" || unit === "pack" || unit === "dozen" || unit === "bottle" || unit === "box" || unit === "unit") && rawBaseQty > 10) {
+                  rawBaseQty = 2;
+                }
+
+                let scaledQty = Math.max(1, Math.round(rawBaseQty * scale));
+                if (!scaledQty || scaledQty <= 0) scaledQty = 1;
+
+                let rawPrice = isAvailable ? ((matchedProd.salePrice && matchedProd.salePrice > 0) ? matchedProd.salePrice : matchedProd.price) : 0;
+                const storeUnitPrice = rawPrice;
+                
+                const scaledPortionPrice = Math.round((scaledQty * storeUnitPrice) * 100) / 100;
+
+                let storeCartQty = scaledQty;
+
+                const displayCat = isAvailable ? (matchedProd.category || "Pantry") : "Unavailable";
+
                 return (
                   <div
                     key={idx}
                     className={`flex items-center justify-between p-4 rounded-2xl border transition ${
-                      isMatched
-                        ? "bg-white/5 border-emerald-500/20 hover:border-emerald-500/40"
-                        : "bg-red-500/5 border-red-500/10"
+                      isAvailable ? "bg-white/5 border-purple-500/20 hover:border-purple-500/40" : "bg-red-500/5 border-red-500/30"
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg select-none ${
-                        isMatched ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold select-none shrink-0 ${
+                        isAvailable ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-red-500/20 text-red-300 border border-red-500/30"
                       }`}>
-                        {isMatched ? "✓" : "✗"}
+                        {idx + 1}
                       </div>
 
                       <div>
-                        <h5 className="font-bold text-sm text-white">
-                          {lang === "ur" ? ing.nameUr : ing.name}
+                        <h5 className={`font-bold text-sm ${isAvailable ? "text-white" : "text-white/80"}`}>
+                          {lang === "ur" ? (ing.nameUr || ing.name) : ing.name}
                         </h5>
-                        <p className="text-xs text-white/50">
-                          {ing.qty} {lang === "ur" ? ing.unitUr : ing.unit} • {ing.category}
+                        <p className="text-xs text-white/60">
+                          {isAvailable ? (
+                            <>
+                              <span className="font-semibold text-purple-300">{scaledQty} {lang === "ur" ? unitUr : unit}</span> • {displayCat}
+                            </>
+                          ) : (
+                            <span className="font-semibold text-red-400">{lang === "ur" ? "اسٹور میں موجود نہیں" : "Not in stock"}</span>
+                          )}
                         </p>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      {isMatched ? (
+                    <div className="text-right shrink-0">
+                      {isAvailable ? (
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-sm font-bold text-purple-300">
-                            {formatPrice(ing.price, currency)}
+                            {formatPrice(scaledPortionPrice, currency, lang, ing.currencyCode || (matchedProd ? matchedProd.currencyCode : "PKR"))}
                           </span>
                           <button
                             type="button"
                             onClick={() => {
                               onAddItems([{
-                                productId: ing.productId,
-                                qty: ing.qty || 1,
-                                name: ing.name,
-                                nameUr: ing.nameUr,
-                                price: ing.price,
+                                productId: resolvedProductId,
+                                qty: storeCartQty,
+                                name: matchedProd ? matchedProd.name : ing.name,
+                                nameUr: matchedProd ? matchedProd.nameUr : ing.nameUr,
+                                price: storeUnitPrice,
+                                currencyCode: matchedProd ? (matchedProd.currencyCode || matchedProd.currency || "PKR") : "PKR",
                                 action: "add"
                               }]);
                               onNotify(
                                 lang === "ur"
-                                  ? `"${ing.nameUr}" کارٹ میں شامل ہو گیا!`
-                                  : `"${ing.name}" added to cart!`,
+                                  ? `"${ing.nameUr || ing.name}" (${storeCartQty} ${unitUr}) کارٹ میں شامل ہو گیا!`
+                                  : `"${ing.name}" (${storeCartQty} ${unit}) added to cart!`,
                                 "success"
                               );
                             }}
-                            className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold cursor-pointer"
+                            className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer transition border border-emerald-500/30 active:scale-95 flex items-center gap-1"
                           >
+                            <ShoppingCart size={11} />
                             {lang === "ur" ? "شامل کریں" : "Add this"}
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs font-bold text-red-400 bg-red-400/10 border border-red-400/20 px-2.5 py-1 rounded-full">
+                        <span className="font-bold text-xs text-red-400 bg-red-500/20 px-2.5 py-1 rounded-xl border border-red-500/30 select-none">
                           {lang === "ur" ? "غیر دستیاب" : "Unavailable"}
                         </span>
                       )}
@@ -777,6 +915,33 @@ export default function ProductCatalog({
                   </div>
                 );
               })}
+            </div>
+
+            {/* MANUAL PRODUCT ADDITION TO RECIPE */}
+            <div className="mt-6 pt-5 border-t border-purple-500/20 flex flex-col md:flex-row items-center gap-3">
+              <div className="flex-1 w-full relative">
+                <input
+                  type="text"
+                  value={manualProductName}
+                  onChange={(e) => setManualProductName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddManualProductToRecipe();
+                    }
+                  }}
+                  placeholder={lang === "ur" ? "پروڈکٹس اور ترکیبات خود سے یہاں شامل کریں (مثال: ادرک، بریانی، کریم)..." : "Manually add products or recipes here (e.g. Garlic, Biryani, Cream)..."}
+                  className="w-full bg-slate-900/90 border border-purple-500/30 rounded-2xl px-4 py-2.5 text-xs md:text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-400"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAddManualProductToRecipe}
+                className="w-full md:w-auto px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-2xl transition cursor-pointer active:scale-95 flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-emerald-500/15"
+              >
+                <Plus size={16} />
+                {lang === "ur" ? "پروڈکٹ شامل کریں" : "Add Product to Recipe"}
+              </button>
             </div>
           </div>
         </div>
@@ -812,7 +977,12 @@ export default function ProductCatalog({
             return (
               <div
                 key={p.id}
-                className={`group relative bg-white/5 backdrop-blur-sm border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 shadow-md hover:shadow-xl overflow-hidden ${
+                onClick={() => {
+                  setSelectedProduct(p);
+                  setModalQty(1);
+                  setActiveModalImage(null);
+                }}
+                className={`group relative bg-white/5 backdrop-blur-sm border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 shadow-md hover:shadow-xl overflow-hidden cursor-pointer ${
                   bulkMode && draftQty > 0 
                     ? "border-amber-400/40 bg-amber-500/[0.02]" 
                     : "border-white/10 hover:border-purple-400/40"
@@ -820,7 +990,10 @@ export default function ProductCatalog({
               >
                 {/* Wishlist toggle heart button absolute */}
                 <button
-                  onClick={() => onToggleFavourite(p.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavourite(p.id);
+                  }}
                   className="absolute top-3 right-3 p-1.5 rounded-full bg-slate-900/80 hover:bg-purple-500 hover:text-slate-950 text-white/60 transition z-10 cursor-pointer"
                 >
                   <Heart size={13} className={isFav ? "fill-red-500 text-red-500" : ""} />
@@ -866,35 +1039,47 @@ export default function ProductCatalog({
                       </div>
 
                       {bulkMode ? (
-                        /* Bulk Increment Buttons */
+                        /* Bulk Increment Buttons & Numeric Input */
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between bg-slate-950/65 p-1 rounded-xl border border-white/5 w-full">
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (draftQty > 0) {
                                   setBulkQuantities({ ...bulkQuantities, [p.id]: draftQty - 1 });
                                 }
                               }}
-                              className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded font-bold text-xs text-white"
+                              className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded font-bold text-xs text-white shrink-0 cursor-pointer"
                             >
                               -
                             </button>
-                            <span className="font-black text-xs text-amber-300 font-mono">
-                              {draftQty}
-                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={draftQty === 0 ? "" : draftQty}
+                              placeholder="0"
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const val = parseInt(e.target.value);
+                                setBulkQuantities({ ...bulkQuantities, [p.id]: isNaN(val) ? 0 : Math.max(0, val) });
+                              }}
+                              className="w-12 text-center font-black text-xs text-amber-300 font-mono bg-transparent border-none outline-none p-0 focus:text-white"
+                            />
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setBulkQuantities({ ...bulkQuantities, [p.id]: draftQty + 1 });
                               }}
-                              className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded font-bold text-xs text-white"
+                              className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded font-bold text-xs text-white shrink-0 cursor-pointer"
                             >
                               +
                             </button>
                           </div>
                           <div className="text-[9px] text-amber-200/50 font-bold tracking-tight">
-                            {lang === "ur" ? "بلک مقدار منتخب کریں" : "Set draft qty"}
+                            {lang === "ur" ? "بلک مقدار درج کریں" : "Enter or edit qty"}
                           </div>
                         </div>
                       ) : (
@@ -918,7 +1103,10 @@ export default function ProductCatalog({
                           </div>
                           
                           <button
-                            onClick={() => onAddFromCatalog(p.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddFromCatalog(p.id);
+                            }}
                             className={`p-2 rounded-lg transition-all active:scale-95 cursor-pointer border ${
                               inCart
                                 ? "bg-purple-500 border-purple-400 text-slate-950 font-bold"
@@ -943,6 +1131,260 @@ export default function ProductCatalog({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* PRODUCT DETAILS MODAL */}
+      {selectedProduct && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setSelectedProduct(null)}
+        >
+          <div 
+            className="relative bg-slate-900 border border-purple-500/30 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 text-white shadow-2xl shadow-purple-950/50 my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setSelectedProduct(null)}
+              className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-purple-500 hover:text-slate-950 text-white/70 transition cursor-pointer z-10"
+              title="Close modal"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Image Gallery */}
+              <div className="md:col-span-5 flex flex-col items-center">
+                <div className="w-full aspect-square bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center overflow-hidden relative shadow-inner">
+                  {(() => {
+                    const displayImg = activeModalImage || selectedProduct.img;
+                    const isImgUrl = typeof displayImg === "string" && (displayImg.startsWith("http://") || displayImg.startsWith("https://") || displayImg.startsWith("/"));
+                    if (isImgUrl) {
+                      return (
+                        <img
+                          src={displayImg}
+                          alt={selectedProduct.name}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      );
+                    }
+                    return <span className="text-6xl">{displayImg || "🥛"}</span>;
+                  })()}
+
+                  {/* Wishlist heart button over image */}
+                  <button
+                    onClick={() => onToggleFavourite(selectedProduct.id)}
+                    className="absolute top-3 left-3 p-2 rounded-full bg-slate-950/70 hover:bg-purple-500 text-white transition cursor-pointer"
+                    title="Toggle Wishlist"
+                  >
+                    <Heart 
+                      size={16} 
+                      className={favourites.includes(selectedProduct.id) ? "fill-red-500 text-red-500" : ""} 
+                    />
+                  </button>
+                </div>
+
+                {/* Thumbnail strip if gallery images exist */}
+                {Array.isArray(selectedProduct.images) && selectedProduct.images.length > 0 && (
+                  <div className="flex items-center gap-2 mt-3 overflow-x-auto w-full pb-1">
+                    <button
+                      onClick={() => setActiveModalImage(selectedProduct.img)}
+                      className={`w-12 h-12 rounded-xl border overflow-hidden shrink-0 cursor-pointer ${
+                        (!activeModalImage || activeModalImage === selectedProduct.img) 
+                          ? "border-purple-400 ring-2 ring-purple-400/40" 
+                          : "border-white/10 opacity-60 hover:opacity-100"
+                      }`}
+                    >
+                      {typeof selectedProduct.img === "string" && (selectedProduct.img.startsWith("http") || selectedProduct.img.startsWith("/")) ? (
+                        <img src={selectedProduct.img} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-lg flex items-center justify-center h-full">{selectedProduct.img || "🥛"}</span>
+                      )}
+                    </button>
+                    {selectedProduct.images.map((imgObj, idx) => {
+                      const imgUrl = typeof imgObj === "string" ? imgObj : imgObj.url;
+                      if (!imgUrl) return null;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveModalImage(imgUrl)}
+                          className={`w-12 h-12 rounded-xl border overflow-hidden shrink-0 cursor-pointer ${
+                            activeModalImage === imgUrl 
+                              ? "border-purple-400 ring-2 ring-purple-400/40" 
+                              : "border-white/10 opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Product Information */}
+              <div className="md:col-span-7 flex flex-col justify-between h-full">
+                <div>
+                  {/* Badges: Category, Subcategory, Stock */}
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-full">
+                      {selectedProduct.category || "Grocery"}
+                    </span>
+                    {selectedProduct.subcategory && (
+                      <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+                        {selectedProduct.subcategory}
+                      </span>
+                    )}
+                    {selectedProduct.price === 0 || selectedProduct.status === "Inactive" || selectedProduct.status === "Unavailable" || selectedProduct.status?.toLowerCase() === "inactive" || selectedProduct.status?.toLowerCase() === "unavailable" || selectedProduct.stockQuantity <= 0 ? (
+                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full">
+                        {lang === "ur" ? "غیر دستیاب" : "Unavailable"}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                        {lang === "ur" ? "دستیا ب" : "In Stock"} {selectedProduct.stockQuantity ? `(${selectedProduct.stockQuantity})` : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Titles */}
+                  <h3 className="font-display font-bold text-xl md:text-2xl text-white leading-tight">
+                    {selectedProduct.name}
+                  </h3>
+                  {selectedProduct.nameUr && (
+                    <h4 className="text-sm font-medium text-purple-300/80 mt-0.5" dir="rtl">
+                      {selectedProduct.nameUr}
+                    </h4>
+                  )}
+
+                  {/* Price Banner */}
+                  <div className="mt-4 p-3 bg-white/5 border border-white/5 rounded-2xl flex items-baseline gap-3">
+                    {selectedProduct.salePrice && selectedProduct.salePrice > 0 ? (
+                      <>
+                        <span className="font-black text-2xl text-emerald-400">
+                          {formatPrice(selectedProduct.salePrice, currency, lang, selectedProduct.currencyCode)}
+                        </span>
+                        <span className="font-bold text-sm text-white/40 line-through">
+                          {formatPrice(selectedProduct.price, currency, lang, selectedProduct.currencyCode)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-black text-2xl text-purple-300">
+                        {formatPrice(selectedProduct.price || 0, currency, lang, selectedProduct.currencyCode)}
+                      </span>
+                    )}
+                    <span className="text-xs text-white/50 font-medium">
+                      / {lang === "ur" ? (selectedProduct.unitUr || selectedProduct.unit) : selectedProduct.unit || "item"}
+                    </span>
+                  </div>
+
+                  {/* Description */}
+                  <div className="mt-4">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-purple-300/70 mb-1">
+                      {lang === "ur" ? "مصنوعات کی تفصیلات" : "Product Description"}
+                    </h5>
+                    <p className="text-xs md:text-sm text-white/80 leading-relaxed bg-slate-950/40 p-3 rounded-xl border border-white/5 whitespace-pre-line">
+                      {lang === "ur" 
+                        ? (selectedProduct.descriptionUr || selectedProduct.description || "اسٹور کیٹلاگ سے تازہ اور اعلیٰ کوالٹی پروڈکٹ۔") 
+                        : (selectedProduct.description || selectedProduct.descriptionUr || "Fresh, high-quality product carefully selected for your daily needs.")
+                      }
+                    </p>
+                  </div>
+
+                  {/* Additional Metadata */}
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-white/60">
+                    {selectedProduct.sku && (
+                      <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                        <span className="font-semibold text-white/40 block">SKU / Code:</span>
+                        <span className="font-mono text-white/90">{selectedProduct.sku}</span>
+                      </div>
+                    )}
+                    {selectedProduct.brand && (
+                      <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                        <span className="font-semibold text-white/40 block">Brand:</span>
+                        <span className="text-white/90">{selectedProduct.brand}</span>
+                      </div>
+                    )}
+                    {selectedProduct.batchNumber && (
+                      <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                        <span className="font-semibold text-white/40 block">Batch No:</span>
+                        <span className="font-mono text-white/90">{selectedProduct.batchNumber}</span>
+                      </div>
+                    )}
+                    {selectedProduct.expiryDate && (
+                      <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                        <span className="font-semibold text-white/40 block">Expiry Date:</span>
+                        <span className="text-amber-300/90">{selectedProduct.expiryDate}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cart Control & Action */}
+                <div className="mt-6 pt-4 border-t border-white/10 flex items-center gap-3">
+                  <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border border-white/10 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setModalQty(Math.max(1, modalQty - 1))}
+                      className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg text-white font-bold cursor-pointer transition"
+                    >
+                      -
+                    </button>
+                    <span className="w-10 text-center font-mono font-bold text-sm text-purple-300">
+                      {modalQty}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setModalQty(modalQty + 1)}
+                      className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg text-white font-bold cursor-pointer transition"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const activePrice = (selectedProduct.salePrice && selectedProduct.salePrice > 0) ? selectedProduct.salePrice : selectedProduct.price;
+                      if (onAddItems) {
+                        onAddItems([{
+                          productId: selectedProduct.id,
+                          name: selectedProduct.name,
+                          nameUr: selectedProduct.nameUr || selectedProduct.name,
+                          category: selectedProduct.category,
+                          price: activePrice,
+                          qty: modalQty,
+                          unit: selectedProduct.unit,
+                          unitUr: selectedProduct.unitUr || selectedProduct.unit,
+                          currencyCode: selectedProduct.currencyCode || selectedProduct.currency || "PKR"
+                        }]);
+                      } else if (onAddFromCatalog) {
+                        for (let i = 0; i < modalQty; i++) {
+                          onAddFromCatalog(selectedProduct.id);
+                        }
+                      }
+                      if (onNotify) {
+                        onNotify(
+                          lang === "ur"
+                            ? `${selectedProduct.nameUr || selectedProduct.name} (${modalQty}) کارٹ میں شامل کر دیا گیا`
+                            : `Added ${modalQty} x ${selectedProduct.name} to cart!`,
+                          "success"
+                        );
+                      }
+                      setSelectedProduct(null);
+                    }}
+                    disabled={selectedProduct.price === 0 || selectedProduct.status === "Inactive" || selectedProduct.status === "Unavailable" || selectedProduct.status?.toLowerCase() === "inactive" || selectedProduct.status?.toLowerCase() === "unavailable"}
+                    className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 cursor-pointer transition active:scale-[0.98]"
+                  >
+                    <ShoppingCart size={16} />
+                    <span>
+                      {lang === "ur" ? "کارٹ میں شامل کریں" : "Add to Cart"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

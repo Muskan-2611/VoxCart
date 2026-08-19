@@ -22,20 +22,21 @@ export default function CartSidebar({
       p.status === "Inactive" || 
       p.status === "Unavailable" || 
       p.status?.toLowerCase() === "inactive" || 
-      p.status?.toLowerCase() === "unavailable" || 
-      p.stockQuantity <= 0
-    ) : true;
+      p.status?.toLowerCase() === "unavailable"
+    ) : false;
     return {
       ...item,
       product: p ? { ...p, isUnavailable: isUnavail } : { 
-        name: item.name || "Unavailable Product", 
-        nameUr: item.nameUr || "غیر دستیاب مصنوعات", 
-        price: 0, 
+        id: item.productId,
+        name: item.name || "Scanned Product", 
+        nameUr: item.nameUr || item.name || "اسکین شدہ پروڈکٹ", 
+        price: item.price !== undefined ? item.price : 150, 
         img: "📦", 
         category: "General", 
-        unit: "item", 
-        unitUr: "عدد",
-        isUnavailable: true 
+        unit: item.unit || "pack", 
+        unitUr: item.unitUr || "پیکٹ",
+        currencyCode: item.currencyCode || "PKR",
+        isUnavailable: false 
       }
     };
   });

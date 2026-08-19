@@ -21,17 +21,15 @@ $password = ''; // Set your actual XAMPP / MySQL root password here
 // Gemini API Key for Multimodal AI Voice OCR Receipt scanner
 $gemini_api_key = 'AIzaSyC-MZt8NSdDPpa_j3_HRCY63cIzFNbsjHY'; // Paste your Gemini API key here (e.g. 'AIzaSy...') or configure in .env file
 
+$conn = null;
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$db_name;charset=utf8mb4", $username, $password);
-    // Set query attributes to fail fast and cast datatypes natively
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    if (in_array("mysql", PDO::getAvailableDrivers())) {
+        $conn = new PDO("mysql:host=$host;dbname=$db_name;charset=utf8mb4", $username, $password);
+        $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    }
 } catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode([
-        "error" => "Database Connection Failed",
-        "details" => $e->getMessage()
-    ]);
-    exit();
+    $conn = null;
+    error_log("MySQL connection error: " . $e->getMessage());
 }
 ?>

@@ -1,6 +1,6 @@
 import React from "react";
 import { TRANSLATIONS, EXCHANGE_RATES } from "../utils/localizer";
-import { Mic, RotateCcw, Heart, FileText, Settings, LogOut, Globe, DollarSign, WifiOff, ShoppingCart, Info, Home, Shield, Sparkles } from "lucide-react";
+import { Mic, RotateCcw, Heart, FileText, Settings, LogOut, Globe, DollarSign, WifiOff, ShoppingCart, Info, Home, Shield, Sparkles, MessageSquare } from "lucide-react";
 
 export default function Navbar({
   user,
@@ -96,8 +96,8 @@ export default function Navbar({
         className="flex items-center gap-3 cursor-pointer select-none group active:scale-97 transition-transform"
         onClick={() => setActiveTab("voice")}
       >
-        <div className="w-10 h-10 md:w-11 md:h-11 bg-gradient-to-tr from-purple-600/30 via-indigo-600/20 to-purple-500/10 border border-purple-500/30 rounded-2xl flex items-center justify-center p-0.5 shadow-lg shadow-purple-500/15 group-hover:border-purple-400/50 transition-all overflow-hidden">
-          <img src="/voxcart_cart_logo.png" alt="VoxCart Logo" className="w-full h-full object-cover rounded-[14px] group-hover:scale-110 transition-transform" />
+        <div className="w-10 h-10 md:w-11 md:h-11 bg-slate-950 border border-purple-500/40 rounded-2xl flex items-center justify-center p-0.5 shadow-lg shadow-purple-500/20 group-hover:scale-105 group-hover:border-purple-400/80 transition-all overflow-hidden shrink-0">
+          <img src="/voxcart_cart_logo.png" alt="VoxCart Logo" className="w-full h-full object-cover rounded-xl group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
         </div>
         <div>
           <h1 className="font-display font-black text-xl md:text-2xl text-white tracking-tight leading-none flex items-center gap-1.5">
@@ -178,6 +178,18 @@ export default function Navbar({
           <span>{t.orders}</span>
         </button>
 
+        <button
+          onClick={() => setActiveTab("feedback")}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === "feedback"
+              ? "bg-purple-600/20 text-purple-200 border border-purple-500/40 shadow-md shadow-purple-500/10"
+              : "text-gray-300 hover:bg-white/5 hover:text-white border border-transparent"
+          }`}
+        >
+          <MessageSquare size={14} className={activeTab === "feedback" ? "text-purple-400" : ""} />
+          <span>{lang === "ur" ? "فیڈ بیک" : "Feedback"}</span>
+        </button>
+
         {user && user.role === "admin" && (
           <button
             onClick={() => setActiveTab("admin")}
@@ -221,10 +233,6 @@ export default function Navbar({
           </select>
         </div>
 
-        {/* Real-time exchange indicator */}
-        <div className="hidden lg:flex items-center text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-xl select-none" title="Real-time Exchange Rate (USD/PKR)">
-          <span>🏦 1 USD = {EXCHANGE_RATES.PKR.rate ? EXCHANGE_RATES.PKR.rate.toFixed(2) : "278.23"} PKR</span>
-        </div>
 
         {/* User Badge */}
         {user && (

@@ -12,6 +12,8 @@ import SmartSuggestions from "./components/SmartSuggestions.jsx";
 import PaymentView from "./components/PaymentView.jsx";
 import LandingPage from "./components/LandingPage.jsx";
 import AIChatbotWidget from "./components/AIChatbotWidget.jsx";
+import FeedbackPage from "./components/FeedbackPage.jsx";
+import { validateStrongPassword } from "./utils/passwordValidator";
 import { Lock, Mail, User, Shield, KeyRound, CornerDownRight, Heart, Sparkles, Wifi, AlertCircle, ShoppingCart, Eye, EyeOff } from "lucide-react";
 
 export default function App() {
@@ -46,6 +48,12 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [randomPlaceholder, setRandomPlaceholder] = useState("e.g. Muskan Mehmood");
+
+  // Email Verification States
+  const [verificationStep, setVerificationStep] = useState(false);
+  const [verificationCodeInput, setVerificationCodeInput] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [codeSentNotice, setCodeSentNotice] = useState("");
 
   useEffect(() => {
     const GENERIC_NAMES = [
@@ -225,7 +233,7 @@ export default function App() {
         api.getUserCategories(currentUserId).catch(e => { console.warn("Categories sync failed:", e); return null; })
       ]);
       
-      if (user && cart !== null) {
+      if (cart !== null && Array.isArray(cart)) {
         setCartItems(cart);
       }
       if (user && favs !== null) {
@@ -283,27 +291,76 @@ export default function App() {
     setVoiceLogs(prev => [text, ...prev].slice(0, 50));
   };
 
-  // Login execution handler
+  // Verification code trigger helper
+  const handleTriggerSendVerificationCode = async (targetEmail) => {
+    const emailToUse = targetEmail || loginEmail;
+    if (!emailToUse || !emailToUse.trim()) {
+      setAuthError("Please enter your email address first.");
+      return false;
+    }
+    setAuthError("");
+    setSendingCode(true);
+    try {
+      const codeRes = await api.sendVerificationCode(emailToUse.trim());
+      setVerificationStep(true);
+      setCodeSentNotice(codeRes.message || `Verification code sent to ${emailToUse.trim()}.`);
+      showToast(codeRes.message || `Verification code sent to ${emailToUse.trim()}. Please check your email.`, "info");
+      return true;
+    } catch (err) {
+      setAuthError(err.message || "Failed to send verification code to " + emailToUse);
+      return false;
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  const handleResendVerificationCode = async () => {
+    await handleTriggerSendVerificationCode(loginEmail);
+  };
+
+  // Login execution handler with 2-step verification
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
     try {
       if (authMode === "login") {
-        if (!loginEmail || !loginPassword) {
-          setAuthError("Please fill in email and password credentials.");
+        if (!loginEmail) {
+          setAuthError("Please enter your email address.");
           return;
         }
-        const loggedUser = await api.login(loginEmail, loginPassword);
+
+        // Step 1: If verification code step is not active yet, trigger verification code delivery
+        if (!verificationStep) {
+          await handleTriggerSendVerificationCode(loginEmail);
+          return;
+        }
+
+        // Step 2: Submit with password & verification code
+        if (!loginPassword) {
+          setAuthError("Please enter your password.");
+          return;
+        }
+
+        if (!verificationCodeInput || !verificationCodeInput.trim()) {
+          setAuthError("Please enter the 6-digit verification code sent to your email.");
+          return;
+        }
+
+        const loggedUser = await api.login(loginEmail, loginPassword, verificationCodeInput.trim());
         sessionStorage.setItem("voxcart_session", JSON.stringify(loggedUser));
         setUser(loggedUser);
-        showToast(`Welcome back, ${loggedUser.name}!`, "success");
+        setVerificationStep(false);
+        setVerificationCodeInput("");
+        setCodeSentNotice("");
+        showToast(`Welcome back, ${loggedUser.name}! Authentication verified.`, "success");
       } else if (authMode === "reset") {
         if (!resetEmail || !resetPassword) {
           setAuthError("Please fill in email and new password.");
           return;
         }
-        if (resetPassword.length < 6) {
-          setAuthError("Password must be at least 6 characters long.");
+        const passVal = validateStrongPassword(resetPassword);
+        if (!passVal.valid) {
+          setAuthError(passVal.message);
           return;
         }
         await api.resetPassword(resetEmail, resetPassword);
@@ -318,14 +375,22 @@ export default function App() {
           setAuthError("All credentials are required.");
           return;
         }
-        if (regPassword.length < 6) {
-          setAuthError("Password must be at least 6 characters long.");
+        const passVal = validateStrongPassword(regPassword);
+        if (!passVal.valid) {
+          setAuthError(passVal.message);
           return;
         }
-        const newUser = await api.register(regName, regEmail, regPassword);
-        sessionStorage.setItem("voxcart_session", JSON.stringify(newUser));
-        setUser(newUser);
-        showToast(`Account successfully registered! Welcome aboard.`, "success");
+        await api.register(regName, regEmail, regPassword);
+        setLoginEmail(regEmail);
+        setLoginPassword("");
+        setRegName("");
+        setRegEmail("");
+        setRegPassword("");
+        setVerificationStep(false);
+        setVerificationCodeInput("");
+        setCodeSentNotice("");
+        setAuthMode("login");
+        showToast("Account successfully registered! Please log in with your account credentials.", "success");
       }
     } catch (err) {
       setAuthError(err.message || "Authentication failed. Please check your credentials.");
@@ -357,7 +422,7 @@ export default function App() {
 
   // Product increments
   const handleUpdateCartQty = async (productId, qty) => {
-    if (!user) return;
+    const activeUserId = user ? user.id : "guest";
     try {
       // Optimistic state rendering
       const previousState = [...cartItems];
@@ -378,7 +443,7 @@ export default function App() {
 
       if (isOnline) {
         // Safe server sync
-        await api.setCartQty(user.id, productId, qty);
+        await api.setCartQty(activeUserId, productId, qty);
       } else {
         showToast("Offline caching quantity changes locally. Will synchronize once online.", "info");
       }
@@ -388,7 +453,7 @@ export default function App() {
   };
 
   const handleAddMultipleProducts = async (items) => {
-    if (!user) return;
+    const activeUserId = user ? user.id : "guest";
     try {
       let newState = [...cartItems];
       for (const item of items) {
@@ -402,59 +467,42 @@ export default function App() {
         }
         
         if (isOnline) {
-          await api.setCartQty(user.id, item.id, targetQty);
+          await api.setCartQty(activeUserId, item.id, targetQty);
         }
       }
       setCartItems(newState);
-      showToast(lang === "ur" ? "تمام اشیاء دوبارہ کارٹ میں شامل کردی گئیں!" : "All items successfully readded to your cart!", "success");
+      showToast(lang === "ur" ? "تمام اشیاء کارٹ میں شامل کردی گئیں!" : "All items successfully added to your cart!", "success");
     } catch (e) {
       showToast("Could not sync items.", "warning");
     }
   };
 
-  // Multi item addition unpacked from voice command
+  // Multi item addition unpacked from voice command or scanner
   const handleAddItemsFromVoice = async (parsedItems) => {
-    if (!user) return;
+    const activeUserId = user ? user.id : "guest";
     
     // Merge or accumulate parsed elements onto existing items lists immutably
     let newCart = [...cartItems];
     const updates = [];
 
     parsedItems.forEach(parsed => {
-      // Validate and normalize quantities and units
-      let qty = parsed.qty || 1;
+      // Validate and normalize quantities and units as whole numbers >= 1
+      let qty = typeof parsed.qty === "number" && parsed.qty > 0 ? parsed.qty : (parseFloat(parsed.qty) || 1);
       const prod = products.find(p => String(p.id) === String(parsed.productId));
       
       if (prod) {
-        const storeUnit = (prod.unit || "").toLowerCase();
         const parsedUnitLower = (parsed.unit || "").toLowerCase();
-        const isGramOrMl = parsedUnitLower.includes("g") || 
-                           parsedUnitLower.includes("gram") || 
-                           parsedUnitLower.includes("گرام") || 
-                           parsedUnitLower.includes("ml") || 
-                           parsedUnitLower.includes("milli") || 
-                           parsedUnitLower.includes("ملی");
+        const isGramOrMl = (
+          parsedUnitLower === "g" || parsedUnitLower === "gram" || parsedUnitLower === "grams" || parsedUnitLower === "گرام" ||
+          parsedUnitLower === "ml" || parsedUnitLower === "milli" || parsedUnitLower === "milliliter" || parsedUnitLower === "milliliters" || parsedUnitLower === "ملی" ||
+          (parsedUnitLower.includes("gram") || parsedUnitLower.includes("milli"))
+        ) && !parsedUnitLower.includes("kg") && !parsedUnitLower.includes("kilo") && !parsedUnitLower.includes("کلو");
 
-        const isWeighed = storeUnit.includes("kg") || storeUnit.includes("کلو") || 
-                          storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ") ||
-                          (prod.category && (prod.category.toLowerCase() === "vegetables" || prod.category.toLowerCase() === "fruits" || prod.category.toLowerCase() === "meat"));
-
-        if (isWeighed) {
-          if (isGramOrMl) {
-            if (storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ")) {
-              qty = Math.max(1, Math.round(qty / 454));
-            } else {
-              qty = Math.max(1, Math.round(qty / 1000));
-            }
-          } else if (qty > 10) {
-            qty = 1;
-          }
-        } else {
-          if (isGramOrMl || qty > 10) {
-            qty = 1;
-          }
+        if (isGramOrMl && qty >= 10) {
+          qty = qty / 1000;
         }
       }
+      qty = Math.max(1, Math.round(qty));
 
       const existIdx = newCart.findIndex(item => String(item.productId) === String(parsed.productId));
       if (parsed.action === "set") {
@@ -462,10 +510,28 @@ export default function App() {
           if (qty <= 0) {
             newCart = newCart.filter((_, idx) => idx !== existIdx);
           } else {
-            newCart[existIdx] = { ...newCart[existIdx], qty: qty };
+            newCart[existIdx] = { 
+              ...newCart[existIdx], 
+              qty: qty,
+              name: parsed.name || newCart[existIdx].name || prod?.name,
+              nameUr: parsed.nameUr || newCart[existIdx].nameUr || prod?.nameUr,
+              price: parsed.price !== undefined ? parsed.price : (newCart[existIdx].price || prod?.price),
+              unit: parsed.unit || newCart[existIdx].unit || prod?.unit,
+              unitUr: parsed.unitUr || newCart[existIdx].unitUr || prod?.unitUr,
+              currencyCode: parsed.currencyCode || newCart[existIdx].currencyCode || prod?.currencyCode
+            };
           }
         } else if (qty > 0) {
-          newCart.push({ productId: parsed.productId, qty: qty });
+          newCart.push({ 
+            productId: parsed.productId, 
+            qty: qty,
+            name: parsed.name || prod?.name,
+            nameUr: parsed.nameUr || prod?.nameUr,
+            price: parsed.price !== undefined ? parsed.price : prod?.price,
+            unit: parsed.unit || prod?.unit,
+            unitUr: parsed.unitUr || prod?.unitUr,
+            currencyCode: parsed.currencyCode || prod?.currencyCode || "PKR"
+          });
         }
       } else if (parsed.action === "remove") {
         if (existIdx > -1) {
@@ -480,10 +546,28 @@ export default function App() {
       } else {
         if (existIdx > -1) {
           const totalQty = newCart[existIdx].qty + qty;
-          newCart[existIdx] = { ...newCart[existIdx], qty: totalQty };
+          newCart[existIdx] = { 
+            ...newCart[existIdx], 
+            qty: totalQty,
+            name: parsed.name || newCart[existIdx].name || prod?.name,
+            nameUr: parsed.nameUr || newCart[existIdx].nameUr || prod?.nameUr,
+            price: parsed.price !== undefined ? parsed.price : (newCart[existIdx].price || prod?.price),
+            unit: parsed.unit || newCart[existIdx].unit || prod?.unit,
+            unitUr: parsed.unitUr || newCart[existIdx].unitUr || prod?.unitUr,
+            currencyCode: parsed.currencyCode || newCart[existIdx].currencyCode || prod?.currencyCode
+          };
           updates.push({ productId: parsed.productId, qty: totalQty });
         } else {
-          newCart.push({ productId: parsed.productId, qty: qty });
+          newCart.push({ 
+            productId: parsed.productId, 
+            qty: qty,
+            name: parsed.name || prod?.name,
+            nameUr: parsed.nameUr || prod?.nameUr,
+            price: parsed.price !== undefined ? parsed.price : prod?.price,
+            unit: parsed.unit || prod?.unit,
+            unitUr: parsed.unitUr || prod?.unitUr,
+            currencyCode: parsed.currencyCode || prod?.currencyCode || "PKR"
+          });
           updates.push({ productId: parsed.productId, qty: qty });
         }
       }
@@ -493,22 +577,22 @@ export default function App() {
 
     if (isOnline) {
       // Sync bulk list with server
-      await api.syncCart(user.id, newCart);
+      await api.syncCart(activeUserId, newCart);
     } else {
       showToast("Offline: Queued bulk additions.", "info");
     }
   };
 
   const handleClearCart = async () => {
-    if (!user) return;
+    const activeUserId = user ? user.id : "guest";
     setCartItems([]);
     if (isOnline) {
-      await api.clearCart(user.id);
+      await api.clearCart(activeUserId);
     }
   };
 
   const handleToggleFavourite = async (productId) => {
-    if (!user) return;
+    const activeUserId = user ? user.id : "guest";
     try {
       const isFav = favourites.includes(productId);
       let newFavs = [...favourites];
@@ -518,9 +602,8 @@ export default function App() {
         newFavs.push(productId);
       }
       setFavourites(newFavs);
-
       if (isOnline) {
-        await api.toggleFavourite(user.id, productId);
+        await api.toggleFavourite(activeUserId, productId);
         showToast(isFav ? "Removed from Wishlist" : "Saved to Wishlist", "success");
       }
     } catch (e) {
@@ -633,89 +716,181 @@ export default function App() {
 
             <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
               
-              {authMode === "register" && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.fullName}</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      required
-                      placeholder={randomPlaceholder}
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none text-white transition font-medium"
-                    />
-                    <User size={16} className="absolute left-3.5 top-3.5 text-white/40" />
+              {/* If Verification Step is Active in Login Mode */}
+              {authMode === "login" && verificationStep ? (
+                <>
+                  <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 flex flex-col gap-2 text-xs">
+                    <div className="flex items-center gap-2 font-bold text-purple-300">
+                      <Mail size={16} />
+                      <span>Email Verification Code Sent!</span>
+                    </div>
+                    <p className="text-white/70 leading-relaxed">
+                      A unique 6-digit security verification code has been sent to <span className="font-bold text-white">{loginEmail}</span>. Please enter it below.
+                    </p>
+                    {codeSentNotice && (
+                      <div className="bg-slate-950/80 p-2.5 rounded-xl border border-purple-500/20 font-mono text-purple-200 text-[11px] break-all">
+                        {codeSentNotice}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.email}</label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. user@example.com"
-                    value={authMode === "login" ? loginEmail : authMode === "reset" ? resetEmail : regEmail}
-                    onChange={(e) => {
-                      if (authMode === "login") setLoginEmail(e.target.value);
-                      else if (authMode === "reset") setResetEmail(e.target.value);
-                      else setRegEmail(e.target.value);
-                    }}
-                    className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none text-white transition font-medium"
-                  />
-                  <Mail size={16} className="absolute left-3.5 top-3.5 text-white/40" />
-                </div>
-              </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-purple-300 uppercase tracking-wider">6-Digit Security Code *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        autoFocus
+                        placeholder="e.g. 123456"
+                        value={verificationCodeInput}
+                        onChange={(e) => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-slate-950 border-2 border-purple-500 focus:border-purple-400 rounded-xl pl-10 pr-4 py-3 text-lg font-mono font-bold text-purple-200 tracking-widest outline-none transition"
+                      />
+                      <Shield size={18} className="absolute left-3.5 top-3.5 text-purple-400" />
+                    </div>
+                  </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-white/40 uppercase tracking-wider">
-                  {authMode === "reset" ? "New Password" : t.password}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showAuthPassword ? "text" : "password"}
-                    required
-                    placeholder="••••••••"
-                    value={authMode === "login" ? loginPassword : authMode === "reset" ? resetPassword : regPassword}
-                    onChange={(e) => {
-                      if (authMode === "login") setLoginPassword(e.target.value);
-                      else if (authMode === "reset") setResetPassword(e.target.value);
-                      else setRegPassword(e.target.value);
-                    }}
-                    className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-12 py-3 text-sm outline-none text-white transition font-mono font-bold"
-                  />
-                  <KeyRound size={16} className="absolute left-3.5 top-3.5 text-white/40" />
                   <button
-                    type="button"
-                    onClick={() => setShowAuthPassword(!showAuthPassword)}
-                    className="absolute right-3.5 top-3.5 text-white/40 hover:text-white transition cursor-pointer flex items-center justify-center focus:outline-none"
-                    title={showAuthPassword ? "Hide password" : "Show password"}
+                    type="submit"
+                    className="mt-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-slate-950 font-black py-3.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 active:scale-97 cursor-pointer select-none"
                   >
-                    {showAuthPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    Verify & Complete Sign In
                   </button>
-                </div>
-              </div>
 
-              {authMode === "login" && (
-                <div className="flex justify-end">
+                  <div className="flex items-center justify-between text-xs text-white/50 pt-2 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={handleResendVerificationCode}
+                      disabled={sendingCode}
+                      className="text-purple-300 hover:underline font-bold cursor-pointer"
+                    >
+                      {sendingCode ? "Sending Code..." : "Resend Verification Code"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setVerificationStep(false); setVerificationCodeInput(""); setAuthError(""); }}
+                      className="text-white/60 hover:text-white cursor-pointer"
+                    >
+                      Change Email / Password
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Standard Credentials Fields */
+                <>
+                  {authMode === "register" && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.fullName}</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          placeholder={randomPlaceholder}
+                          value={regName}
+                          onChange={(e) => setRegName(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none text-white transition font-medium"
+                        />
+                        <User size={16} className="absolute left-3.5 top-3.5 text-white/40" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.email}</label>
+                      {authMode === "login" && !verificationStep && (
+                        <button
+                          type="button"
+                          onClick={() => handleTriggerSendVerificationCode(loginEmail)}
+                          disabled={sendingCode || !loginEmail}
+                          className="text-xs text-purple-300 font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-40"
+                        >
+                          <Mail size={12} />
+                          {sendingCode ? "Sending Code..." : "Send Verification Code"}
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. user@example.com"
+                        value={authMode === "login" ? loginEmail : authMode === "reset" ? resetEmail : regEmail}
+                        onChange={(e) => {
+                          if (authMode === "login") setLoginEmail(e.target.value);
+                          else if (authMode === "reset") setResetEmail(e.target.value);
+                          else setRegEmail(e.target.value);
+                        }}
+                        className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none text-white transition font-medium"
+                      />
+                      <Mail size={16} className="absolute left-3.5 top-3.5 text-white/40" />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-white/40 uppercase tracking-wider">
+                      {authMode === "reset" ? "New Password" : t.password}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAuthPassword ? "text" : "password"}
+                        required
+                        placeholder="••••••••"
+                        value={authMode === "login" ? loginPassword : authMode === "reset" ? resetPassword : regPassword}
+                        onChange={(e) => {
+                          if (authMode === "login") setLoginPassword(e.target.value);
+                          else if (authMode === "reset") setResetPassword(e.target.value);
+                          else setRegPassword(e.target.value);
+                        }}
+                        className="w-full bg-white/5 border border-white/10 focus:border-purple-500 focus:bg-white/10 rounded-xl pl-10 pr-12 py-3 text-sm outline-none text-white transition font-mono font-bold"
+                      />
+                      <KeyRound size={16} className="absolute left-3.5 top-3.5 text-white/40" />
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthPassword(!showAuthPassword)}
+                        className="absolute right-3.5 top-3.5 text-white/40 hover:text-white transition cursor-pointer flex items-center justify-center focus:outline-none"
+                        title={showAuthPassword ? "Hide password" : "Show password"}
+                      >
+                        {showAuthPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    {(authMode === "register" || authMode === "reset") && (
+                      <p className="text-[11px] text-purple-300/80 leading-tight pt-1 flex items-start gap-1">
+                        <Shield size={12} className="shrink-0 text-purple-400 mt-0.5" />
+                        <span>Password requires 8+ characters, including uppercase (A-Z), lowercase (a-z), digit (0-9), and a special character (e.g. !@#$%^&*).</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {authMode === "login" && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => { setAuthError(""); setAuthMode("reset"); setResetEmail(loginEmail); }}
+                        className="text-xs text-purple-300/80 hover:text-purple-200 hover:underline cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
+
                   <button
-                    type="button"
-                    onClick={() => { setAuthError(""); setAuthMode("reset"); setResetEmail(loginEmail); }}
-                    className="text-xs text-purple-300/80 hover:text-purple-200 hover:underline cursor-pointer"
+                    type="submit"
+                    disabled={sendingCode}
+                    className="mt-2 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold py-3.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 active:scale-97 cursor-pointer select-none flex items-center justify-center gap-2"
                   >
-                    Forgot password?
+                    {sendingCode 
+                      ? "Sending Security Code..." 
+                      : authMode === "login" 
+                      ? "Send Verification Code & Login" 
+                      : authMode === "reset" 
+                      ? "Reset Password" 
+                      : t.authSubmitRegister}
                   </button>
-                </div>
+                </>
               )}
-
-              <button
-                type="submit"
-                className="mt-2 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold py-3.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 active:scale-97 cursor-pointer select-none"
-              >
-                {authMode === "login" ? t.authSubmitLogin : authMode === "reset" ? "Reset Password" : t.authSubmitRegister}
-              </button>
             </form>
 
             <div className="text-center mt-6 text-sm text-white/50 border-b border-white/10 pb-6">
@@ -865,6 +1040,15 @@ export default function App() {
                 onNotify={showToast}
                 onDeleteOrder={handleDeleteOrder}
                 onReorder={handleAddMultipleProducts}
+              />
+            )}
+
+            {activeTab === "feedback" && (
+              /* TAB: CUSTOMER FEEDBACK & COMPLAINT SYSTEM */
+              <FeedbackPage
+                lang={lang}
+                user={user}
+                onNotify={showToast}
               />
             )}
 

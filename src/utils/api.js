@@ -9,11 +9,13 @@ const PHP_BASE_URL = "http://localhost/voxcart-api/api.php";
 
 async function request(endpoint, options = {}) {
   let url = "";
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
+
   if (BACKEND_TYPE === "node") {
-    url = `${NODE_BASE_URL}/${endpoint}`;
+    url = `${NODE_BASE_URL}/${cleanEndpoint}`;
   } else {
     // For PHP, we map REST endpoints to API query parameters
-    const [path, query] = endpoint.split("?");
+    const [path, query] = cleanEndpoint.split("?");
     const queryParams = query ? `&${query}` : "";
     if (path.startsWith("auth/login")) {
       url = `${PHP_BASE_URL}?action=login`;
@@ -25,6 +27,21 @@ async function request(endpoint, options = {}) {
       url = `${PHP_BASE_URL}?action=update_password`;
     } else if (path.startsWith("auth/update-avatar")) {
       url = `${PHP_BASE_URL}?action=update_avatar`;
+    } else if (path.startsWith("auth/send-verification-code")) {
+      url = `${PHP_BASE_URL}?action=send_verification_code`;
+    } else if (path.startsWith("auth/verify-code")) {
+      url = `${PHP_BASE_URL}?action=verify_code`;
+    } else if (path.startsWith("feedback")) {
+      const parts = path.split("/");
+      if (parts[2] === "reply") {
+        url = `${PHP_BASE_URL}?action=reply_feedback&id=${parts[1]}`;
+      } else if (options.method === "DELETE") {
+        url = `${PHP_BASE_URL}?action=delete_feedback&id=${parts[1]}`;
+      } else if (options.method === "POST") {
+        url = `${PHP_BASE_URL}?action=submit_feedback`;
+      } else {
+        url = `${PHP_BASE_URL}?action=get_feedback${queryParams}`;
+      }
     } else if (path.startsWith("products")) {
       if (options.method === "POST") {
         url = `${PHP_BASE_URL}?action=create_product`;
@@ -141,17 +158,17 @@ async function request(endpoint, options = {}) {
       } else {
         url = `${PHP_BASE_URL}?action=get_currencies`;
       }
-    } else if (path.startsWith("exchange-rates")) {
+    } else if (path.startsWith("exchange-rates") || path.startsWith("exchange_rates")) {
       url = `${PHP_BASE_URL}?action=exchange_rates`;
-    } else if (path.startsWith("ocr")) {
+    } else if (path.startsWith("ocr") || path.startsWith("process-ocr") || path.startsWith("process_ocr")) {
       url = `${PHP_BASE_URL}?action=ocr`;
-    } else if (path.startsWith("upload-image")) {
+    } else if (path.startsWith("upload-image") || path.startsWith("upload_image")) {
       url = `${PHP_BASE_URL}?action=upload_image`;
-    } else if (path.startsWith("voice-parse")) {
+    } else if (path.startsWith("voice-parse") || path.startsWith("voice_parse")) {
       url = `${PHP_BASE_URL}?action=voice_parse`;
-    } else if (path.startsWith("smart-search")) {
+    } else if (path.startsWith("smart-search") || path.startsWith("smart_search")) {
       url = `${PHP_BASE_URL}?action=smart_search`;
-    } else if (path.startsWith("recipe-search")) {
+    } else if (path.startsWith("recipe-search") || path.startsWith("recipe_search")) {
       url = `${PHP_BASE_URL}?action=recipe_search`;
     } else if (path.startsWith("chatbot")) {
       url = `${PHP_BASE_URL}?action=chatbot`;
@@ -187,16 +204,37 @@ async function request(endpoint, options = {}) {
 
     return await response.json();
   } catch (err) {
-    console.error(`API Request Failure [${url}]:`, err);
+    if (BACKEND_TYPE === "php") {
+      // If local PHP server is unreachable, offline, or returns error, fall back to the live server
+      try {
+        const fallbackUrl = `${NODE_BASE_URL}/${cleanEndpoint}`;
+        const fbResponse = await fetch(fallbackUrl, {
+          ...options,
+          headers: {
+            ...defaultHeaders,
+            ...options.headers
+          }
+        });
+        if (fbResponse.ok) {
+          const fbContentType = fbResponse.headers.get("content-type") || "";
+          if (!fbContentType.includes("text/html")) {
+            return await fbResponse.json();
+          }
+        }
+      } catch (fallbackErr) {
+        // Fallback error ignored
+      }
+    }
+    console.warn(`API Request Info [${url}]:`, err.message || err);
     throw err;
   }
 }
 
 export const api = {
   // Authentication
-  login: (email, password) => request("auth/login", {
+  login: (email, password, verificationCode = null) => request("auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password, verificationCode, code: verificationCode })
   }),
   
   register: (name, email, password) => request("auth/register", {
@@ -263,9 +301,9 @@ export const api = {
     }
   },
   
-  setCartQty: (userId, productId, qty) => request(`cart/${userId}`, {
+  setCartQty: (userId, productId, qty, itemData = {}) => request(`cart/${userId}`, {
     method: "POST",
-    body: JSON.stringify({ productId, qty })
+    body: JSON.stringify({ productId, qty, ...itemData })
   }),
   
   syncCart: (userId, items) => request(`cart/${userId}/sync`, {
@@ -487,6 +525,7 @@ export const api = {
 
   // User-Specific Extracted Categories (Logged-In User Only)
   getUserCategories: async (userId) => {
+    if (!userId || userId === "guest") return [];
     try {
       const data = await request(`user-categories/${userId}`);
       return Array.isArray(data) ? data : [];
@@ -520,5 +559,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, chatHistory, language, currency, activeTab, userId })
     });
-  }
+  },
+
+  // Email Verification System
+  sendVerificationCode: (email) => request("auth/send-verification-code", {
+    method: "POST",
+    body: JSON.stringify({ email })
+  }),
+  verifyCode: (email, code) => request("auth/verify-code", {
+    method: "POST",
+    body: JSON.stringify({ email, code })
+  }),
+
+  // Feedback & Complaint System
+  submitFeedback: (feedbackData) => request("feedback", {
+    method: "POST",
+    body: JSON.stringify(feedbackData)
+  }),
+  getFeedback: (userId = null, email = null) => {
+    const params = new URLSearchParams();
+    if (userId) params.append("userId", userId);
+    if (email) params.append("email", email);
+    const queryString = params.toString();
+    return request(`feedback${queryString ? "?" + queryString : ""}`);
+  },
+  replyFeedback: (id, adminResponse) => request(`feedback/${id}/reply`, {
+    method: "POST",
+    body: JSON.stringify({ adminResponse })
+  }),
+  deleteFeedback: (id) => request(`feedback/${id}`, {
+    method: "DELETE"
+  })
 };

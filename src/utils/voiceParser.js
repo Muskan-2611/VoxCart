@@ -236,10 +236,14 @@ export function parseVoiceCommand(text, dynamicProducts = []) {
     ]);
   }
 
-  // RECIPE COMMANDS
-  const isBiryani = [
-    "chicken biryani", "biryani ke ingredients", "biryani ingredients", "ingredients for chicken biryani", "chicken biryani ingredients", "chicken biryani ke ingredients", "biryani"
-  ].some(phrase => normalized.includes(phrase));
+  // RECIPE COMMANDS - Only trigger if query explicitly asks for a recipe or recipe ingredients
+  const hasExplicitRecipeIntent = ["recipe", "ingredients", "tarika", "طریقہ", "ترکیب", "how to cook", "how to make", "banane ka tarika", "ke ingredients", "ke ajza"].some(w => normalized.includes(w));
+  const hasDirectProductIntent = ["add", "shamil", "chahiye", "karo", "kardo", "kilo", "kg", "gram", "liter", "liters", "pack", "packet", "dozen", "bottles", "piece"].some(w => normalized.includes(w));
+
+  if (hasExplicitRecipeIntent && !hasDirectProductIntent) {
+    const isBiryani = [
+      "chicken biryani", "biryani ke ingredients", "biryani ingredients", "ingredients for chicken biryani", "chicken biryani ingredients", "chicken biryani ke ingredients", "biryani recipe"
+    ].some(phrase => normalized.includes(phrase));
 
   if (isBiryani) {
     const biryaniItems = [
@@ -489,7 +493,7 @@ export function parseVoiceCommand(text, dynamicProducts = []) {
 
     return {
       action: "update_items",
-      items: kheerItems.map(item => ({ ...item, action: "set", price: 1.99 })),
+      items: kheerItems.map(item => ({ ...item, action: "set", price: item.matched ? 150 : 0 })),
       logs: ["Kheer recipe triggered! Added: Whole Milk, White Rice, Sugar, Butter. Cardamom and Dry Fruits are marked Unavailable."]
     };
   }
@@ -498,20 +502,21 @@ export function parseVoiceCommand(text, dynamicProducts = []) {
     "recipe ingredients", "all recipe products", "all recipes", "recipe items", "recipe products", "recipe products list"
   ].some(phrase => normalized.includes(phrase));
 
-  if (isRecipeIngredients) {
-    const recipeItems = [
-      { id: 19, qty: 1, unit: "kg", unitUr: "کلو" },
-      { id: 20, qty: 1, unit: "box", unitUr: "ڈبہ" },
-      { id: 21, qty: 1, unit: "piece", unitUr: "عدد" },
-      { id: 22, qty: 1, unit: "pack", unitUr: "پیکٹ" },
-      { id: 23, qty: 1, unit: "pack", unitUr: "پیکٹ" }
-    ];
+    if (isRecipeIngredients) {
+      const recipeItems = [
+        { id: 19, qty: 1, unit: "kg", unitUr: "کلو" },
+        { id: 20, qty: 1, unit: "box", unitUr: "ڈبہ" },
+        { id: 21, qty: 1, unit: "piece", unitUr: "عدد" },
+        { id: 22, qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { id: 23, qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ];
 
-    return {
-      action: "update_items",
-      items: recipeItems.map(item => ({ ...item, action: "set", price: 1.99 })),
-      logs: ["Recipe Ingredients list triggered! Added: White Rice, Pasta, Cooking Oil, Sugar, Salt."]
-    };
+      return {
+        action: "update_items",
+        items: recipeItems.map(item => ({ ...item, action: "set", price: 1.99 })),
+        logs: ["Recipe Ingredients list triggered! Added: White Rice, Pasta, Cooking Oil, Sugar, Salt."]
+      };
+    }
   }
 
   const isHealthyFoods = [

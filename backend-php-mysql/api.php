@@ -4,6 +4,32 @@
 
 require_once 'db.php';
 
+// Automatically load .env file variables if available
+function loadDotEnvPHP() {
+    $envPaths = [__DIR__ . '/../.env', __DIR__ . '/.env'];
+    foreach ($envPaths as $envPath) {
+        if (file_exists($envPath)) {
+            $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line) || strpos($line, '#') === 0) continue;
+                if (strpos($line, '=') !== false) {
+                    list($key, $val) = explode('=', $line, 2);
+                    $key = trim($key);
+                    $val = trim($val, " \t\n\r\0\x0B\"'");
+                    if (!empty($key)) {
+                        putenv("{$key}={$val}");
+                        $_ENV[$key] = $val;
+                        $_SERVER[$key] = $val;
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+loadDotEnvPHP();
+
 // Retrieve absolute request parameters
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
@@ -11,6 +37,196 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 function getRequestBody() {
     $json = file_get_contents('php://input');
     return json_decode($json, true);
+}
+
+function sendVerificationEmailPHP($to, $subject, $code) {
+    $host = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+    $port = (int)(getenv('SMTP_PORT') ?: 587);
+    $rawUser = getenv('SMTP_USER') ?: getenv('GMAIL_USER') ?: 'muskanmehmood2611@gmail.com';
+    $rawPass = getenv('SMTP_PASS') ?: getenv('GMAIL_PASS') ?: 'rucwgjfcukdabttz';
+    $user = rtrim(trim($rawUser), ')');
+    $pass = str_replace(' ', '', $rawPass);
+
+    $subject = "Your VoxCart Verification Code: {$code}";
+
+    $mailBody = "
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset='UTF-8'>
+      <title>VoxCart Security Verification Code</title>
+    </head>
+    <body style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 24px; line-height: 1.5;'>
+      <div style='max-width: 480px; margin: 0 auto; background: #ffffff; padding: 32px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);'>
+        <div style='text-align: center; margin-bottom: 24px;'>
+          <h1 style='color: #6d28d9; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.5px;'>VoxCart Online Store</h1>
+          <p style='color: #64748b; font-size: 13px; margin-top: 4px;'>Account Security Verification</p>
+        </div>
+        <p style='color: #334155; font-size: 14px; margin-bottom: 16px;'>Hello,</p>
+        <p style='color: #334155; font-size: 14px; margin-bottom: 20px;'>Use the following 6-digit security verification code to complete your request on VoxCart:</p>
+        <div style='font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #6d28d9; background: #f1f5f9; padding: 18px 24px; text-align: center; border-radius: 8px; margin: 20px 0; border: 1px dashed #cbd5e1;'>
+          {$code}
+        </div>
+        <p style='font-size: 13px; color: #64748b; margin-top: 20px;'>This code is valid for <strong>10 minutes</strong>. Do not share this code with anyone.</p>
+        <hr style='border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;' />
+        <p style='font-size: 12px; color: #94a3b8; text-align: center; margin: 0;'>If you did not request this code, no action is required.<br />&copy; VoxCart Security Team</p>
+      </div>
+    </body>
+    </html>";
+
+    $plainTextBody = "Your VoxCart security verification code is: {$code}\n\n" .
+                     "Please enter this 6-digit code on the VoxCart website to verify your account.\n" .
+                     "This verification code is valid for 10 minutes.\n\n" .
+                     "If you did not request this verification code, please ignore this email.\n\n" .
+                     "VoxCart Security Team";
+
+    if (!$user || !$pass) {
+        // Fallback to mail() delivery or log confirmation
+        $headers = "From: VoxCart Security <security@voxcart.com>\r\n" .
+                   "Reply-To: support@voxcart.com\r\n" .
+                   "Content-Type: text/html; charset=UTF-8\r\n" .
+                   "X-Mailer: PHP/" . phpversion();
+        @mail($to, $subject, $mailBody, $headers);
+        error_log("[SMTP SYSTEM] Verification email dispatched to {$to} via PHP mail system.");
+        return ["success" => true];
+    }
+
+    $context = stream_context_create([
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => true
+        ]
+    ]);
+
+    $socketHost = ($port == 465) ? "ssl://{$host}" : "tcp://{$host}";
+    $socket = @stream_socket_client("{$socketHost}:{$port}", $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $context);
+
+    if (!$socket) {
+        return [
+            "success" => false,
+            "error" => "Could not connect to SMTP server at {$host}:{$port} ({$errstr}). Please check host, port, and outbound firewall."
+        ];
+    }
+
+    $read = function($s) {
+        $r = "";
+        while ($l = fgets($s, 512)) {
+            $r .= $l;
+            if (substr($l, 3, 1) === " ") break;
+        }
+        return $r;
+    };
+    $write = function($s, $cmd) { fputs($s, $cmd . "\r\n"); };
+
+    $greeting = $read($socket);
+    if (substr($greeting, 0, 3) !== "220") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP Server error on connect: " . trim($greeting)];
+    }
+
+    $write($socket, "EHLO " . gethostname());
+    $read($socket);
+
+    if ($port == 587) {
+        $write($socket, "STARTTLS");
+        $st = $read($socket);
+        if (strpos($st, '220') !== false) {
+            $cryptoType = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
+                $cryptoType |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+            }
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) {
+                $cryptoType |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
+            }
+            $cryptoRes = @stream_socket_enable_crypto($socket, true, $cryptoType);
+            if (!$cryptoRes) {
+                fclose($socket);
+                return ["success" => false, "error" => "TLS negotiation failed with SMTP server."];
+            }
+            $write($socket, "EHLO " . gethostname());
+            $read($socket);
+        }
+    }
+
+    $write($socket, "AUTH LOGIN");
+    $authReq = $read($socket);
+    if (substr($authReq, 0, 3) !== "334") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP AUTH LOGIN rejected: " . trim($authReq)];
+    }
+
+    $write($socket, base64_encode($user));
+    $uResp = $read($socket);
+    if (substr($uResp, 0, 3) !== "334") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP Username rejected for {$user}: " . trim($uResp)];
+    }
+
+    $write($socket, base64_encode($pass));
+    $authResp = $read($socket);
+    if (substr($authResp, 0, 3) !== "235") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP Authentication failed for {$user}. Please verify your SMTP App Password: " . trim($authResp)];
+    }
+
+    $write($socket, "MAIL FROM: <{$user}>");
+    $mfResp = $read($socket);
+    if (substr($mfResp, 0, 3) !== "250") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP MAIL FROM rejected: " . trim($mfResp)];
+    }
+
+    $write($socket, "RCPT TO: <{$to}>");
+    $rcptResp = $read($socket);
+    if (substr($rcptResp, 0, 3) !== "250") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP RCPT TO rejected for {$to}: " . trim($rcptResp)];
+    }
+
+    $write($socket, "DATA");
+    $dataReq = $read($socket);
+    if (substr($dataReq, 0, 3) !== "354") {
+        fclose($socket);
+        return ["success" => false, "error" => "SMTP DATA command failed: " . trim($dataReq)];
+    }
+
+    $boundary = "----=_NextPart_" . md5(time() . rand());
+    $msgId = "<voxcart-" . md5(time() . rand()) . "@gmail.com>";
+
+    $headers = "From: \"VoxCart Security\" <{$user}>\r\n";
+    $headers .= "Reply-To: \"VoxCart Security\" <{$user}>\r\n";
+    $headers .= "To: <{$to}>\r\n";
+    $headers .= "Subject: {$subject}\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: multipart/alternative; boundary=\"{$boundary}\"\r\n";
+    $headers .= "Auto-Submitted: auto-generated\r\n";
+    $headers .= "X-Auto-Response-Suppress: OOF, AutoReply, All\r\n";
+    $headers .= "X-Priority: 1 (Highest)\r\n";
+    $headers .= "X-MSMail-Priority: High\r\n";
+    $headers .= "Importance: High\r\n";
+    $headers .= "Message-ID: {$msgId}\r\n\r\n";
+
+    $multipartPayload = "--{$boundary}\r\n" .
+                        "Content-Type: text/plain; charset=UTF-8\r\n" .
+                        "Content-Transfer-Encoding: 8bit\r\n\r\n" .
+                        $plainTextBody . "\r\n\r\n" .
+                        "--{$boundary}\r\n" .
+                        "Content-Type: text/html; charset=UTF-8\r\n" .
+                        "Content-Transfer-Encoding: 8bit\r\n\r\n" .
+                        $mailBody . "\r\n\r\n" .
+                        "--{$boundary}--";
+
+    $write($socket, $headers . $multipartPayload . "\r\n.");
+    $dResp = $read($socket);
+    $write($socket, "QUIT");
+    fclose($socket);
+
+    if (substr($dResp, 0, 3) === "250") {
+        return ["success" => true];
+    } else {
+        return ["success" => false, "error" => "SMTP server rejected message body: " . trim($dResp)];
+    }
 }
 
 function php_starts_with($haystack, $needle) {
@@ -38,10 +254,10 @@ function parseVoiceCommandBackendPHP($text, $products) {
         $biryaniItems = [
             ["id" => 13, "qty" => 1, "unit" => "kg", "unitUr" => "کلو", "matched" => true], // Chicken
             ["id" => 19, "qty" => 1, "unit" => "kg", "unitUr" => "کلو", "matched" => true], // Rice
-            ["id" => 11, "qty" => 500, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Onions
-            ["id" => 9,  "qty" => 500, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Tomatoes
-            ["id" => 10, "qty" => 500, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Potatoes
-            ["id" => 21, "qty" => 1, "unit" => "liters", "unitUr" => "لیٹر", "matched" => true], // Cooking oil
+            ["id" => 11, "qty" => 250, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Onions
+            ["id" => 9,  "qty" => 250, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Tomatoes
+            ["id" => 10, "qty" => 250, "unit" => "g", "unitUr" => "گرام", "matched" => true], // Potatoes
+            ["id" => 21, "qty" => 250, "unit" => "ml", "unitUr" => "ملی لیٹر", "matched" => true], // Cooking oil
             ["id" => 23, "qty" => 1, "unit" => "packs", "unitUr" => "پیکٹ", "matched" => true], // Salt
             ["id" => null, "qty" => 1, "unit" => "pack", "unitUr" => "پیکٹ", "matched" => false, "name" => "Biryani Masala / Spices", "nameUr" => "بریانی مصالحہ", "category" => "Pantry"],
             ["id" => null, "qty" => 1, "unit" => "pack", "unitUr" => "پیکٹ", "matched" => false, "name" => "Ginger Garlic Paste", "nameUr" => "ادرک لہسن کا پیسٹ", "category" => "Pantry"],
@@ -704,12 +920,586 @@ function resolveProductFlatFields($product, $brands, $categories, $subcategories
     ];
 }
 
+// ------------------- OCR & FUZZY PRODUCT MATCHING HELPERS -------------------
+function getSpellingSimilarityPHP($s1, $s2) {
+    if (!$s1 || !$s2) return 0;
+    $s1 = strtolower(trim($s1));
+    $s2 = strtolower(trim($s2));
+    if ($s1 === $s2) return 1;
+    $len1 = strlen($s1);
+    $len2 = strlen($s2);
+    $maxLen = max($len1, $len2);
+    if ($maxLen === 0) return 1;
+    $dist = levenshtein(substr($s1, 0, 255), substr($s2, 0, 255));
+    return max(0, 1 - ($dist / $maxLen));
+}
+
+function normalizeStringPHP($str) {
+    if (!$str) return "";
+    $str = mb_strtolower((string)$str, 'UTF-8');
+    $str = preg_replace('/[.,\/#!$%\^&\*;:{}=\-_`~()\[\]|]/u', ' ', $str);
+    $str = preg_replace('/\s+/u', ' ', $str);
+    return trim($str);
+}
+
+function stripPluralEndingsPHP($s) {
+    return preg_replace('/(s|es|ies)$/i', '', $s);
+}
+
+function fuzzyMatchProductBackendPHP($pNameItem, $pNameUrItem, $productsList) {
+    if (empty($productsList)) return null;
+
+    $rawEn = normalizeStringPHP($pNameItem);
+    $rawUr = normalizeStringPHP($pNameUrItem);
+
+    if (!$rawEn && !$rawUr) return null;
+
+    $noiseWordsRegex = '/\b(1x|2x|3x|4x|5x|kg|g|gram|grams|kilo|kilos|kilogram|kilograms|liter|liters|litre|litres|l|ml|milliliter|milliliters|lb|lbs|pound|pounds|pack|packs|packet|packets|box|boxes|bottle|bottles|piece|pieces|pcs|pc|dozen|dozens|pkr|rs|usd|\$|nestle|olpers|national|shan|shangrila|habib|lipton|tapal|meezan|dalda|rafhan|knorr|knor|mitchells|sensodyne|colgate|lux|surf|ariel|harpic|dettol|fresh|super|kernel|broiler|pure|life|iodized|organic|org|original|best|quality|premium|extra|prime|brand|select|choice|item|items)\b/iu';
+
+    $cleanNoise = function($str) use ($noiseWordsRegex) {
+        $norm = normalizeStringPHP($str);
+        $norm = preg_replace($noiseWordsRegex, '', $norm);
+        $norm = preg_replace('/\b\d+(\.\d+)?(kg|g|l|ml|oz|lb)?\b/iu', '', $norm);
+        $norm = preg_replace('/\b\d+\b/u', '', $norm);
+        $norm = preg_replace('/\s+/u', ' ', $norm);
+        return trim($norm);
+    };
+
+    $cleanedEn = $cleanNoise($rawEn);
+    if (!$cleanedEn) $cleanedEn = $rawEn;
+
+    // Direct Exact Name Check
+    foreach ($productsList as $p) {
+        $pName = normalizeStringPHP($p['name'] ?? '');
+        $pNameUr = normalizeStringPHP($p['nameUr'] ?? ($p['name_ur'] ?? ''));
+        if ($pName === $rawEn || ($pNameUr && $rawUr && $pNameUr === $rawUr)) {
+            return $p;
+        }
+        if ($pName === $cleanedEn) {
+            return $p;
+        }
+    }
+
+    $romanUrduMap = [
+        "doodh" => "milk", "dudh" => "milk", "khalees doodh" => "milk", "dood" => "milk",
+        "anday" => "eggs", "ande" => "eggs", "anda" => "eggs", "andey" => "eggs",
+        "paneer" => "cheese", "paner" => "cheese", "chees" => "cheese",
+        "makkhan" => "butter", "makhan" => "butter", "makkan" => "butter",
+        "kelay" => "bananas", "kele" => "bananas", "kela" => "bananas",
+        "saib" => "apples", "seb" => "apples", "apple" => "apples",
+        "maltey" => "oranges", "malte" => "oranges", "malta" => "oranges", "kinnow" => "oranges", "kino" => "oranges",
+        "aam" => "mangoes", "mango" => "mangoes",
+        "tamatar" => "tomatoes", "tomato" => "tomatoes", "tamatr" => "tomatoes",
+        "aaloo" => "potatoes", "aalu" => "potatoes", "aloo" => "potatoes", "alu" => "potatoes", "potato" => "potatoes",
+        "pyaaz" => "onions", "piyaz" => "onions", "pyaz" => "onions", "onion" => "onions",
+        "gajar" => "carrots", "gajjar" => "carrots", "carrot" => "carrots",
+        "murghi" => "chicken", "murgi" => "chicken", "murghi ka gosht" => "chicken", "chicken" => "chicken",
+        "qeema" => "beef", "qima" => "beef", "keema" => "beef", "beef" => "beef",
+        "machli" => "fish", "machhli" => "fish", "fish" => "fish", "salmon" => "fish",
+        "paani" => "water", "pani" => "water", "water" => "water",
+        "chai" => "tea", "sabz chai" => "tea", "tea" => "tea",
+        "chawal" => "rice", "rice" => "rice",
+        "tel" => "oil", "tail" => "oil", "koking oil" => "oil", "cooking oil" => "oil", "oil" => "oil", "ghee" => "oil",
+        "cheeni" => "sugar", "chini" => "sugar", "sugar" => "sugar",
+        "namak" => "salt", "salt" => "salt"
+    ];
+
+    $synonymsMap = [
+        "coke" => ["coca-cola", "cocacola", "cola", "soda"],
+        "cola" => ["coca-cola", "cocacola", "coke"],
+        "milk" => ["whole milk", "dairy milk", "pack milk", "milkpak", "olpers"],
+        "egg" => ["large eggs", "eggs", "egg", "desi anday"],
+        "eggs" => ["large eggs", "eggs", "egg", "desi anday"],
+        "cheese" => ["cheddar cheese", "cheese slice", "paneer"],
+        "butter" => ["butter block", "butter", "makkhan", "nurpur"],
+        "bananas" => ["bananas", "banana"],
+        "banana" => ["bananas", "banana"],
+        "apples" => ["apples", "apple"],
+        "apple" => ["apples", "apple"],
+        "oranges" => ["oranges", "orange", "kinnow"],
+        "orange" => ["oranges", "orange"],
+        "mangoes" => ["mangoes", "mango"],
+        "mango" => ["mangoes", "mango"],
+        "tomatoes" => ["tomatoes", "tomato"],
+        "tomato" => ["tomatoes", "tomato"],
+        "potatoes" => ["potatoes", "potato"],
+        "potato" => ["potatoes", "potato"],
+        "onions" => ["onions", "onion"],
+        "onion" => ["onions", "onion"],
+        "carrots" => ["carrots", "carrot"],
+        "carrot" => ["carrots", "carrot"],
+        "chicken" => ["chicken breast", "chicken", "murgi", "broiler"],
+        "beef" => ["ground beef", "beef", "mincemeat", "qeema", "keema"],
+        "qeema" => ["ground beef", "beef", "mincemeat", "qeema", "keema"],
+        "fish" => ["salmon fillet", "fish fillet", "salmon", "machli"],
+        "salmon" => ["salmon fillet", "fish fillet", "salmon"],
+        "water" => ["mineral water", "water bottle", "nestle pure life"],
+        "tea" => ["green tea", "chai", "tea pack", "tapal", "lipton"],
+        "chai" => ["green tea", "chai", "tea pack", "tapal", "lipton"],
+        "rice" => ["white rice", "rice pack", "chawal", "basmati", "super kernel"],
+        "pasta" => ["pasta", "macaroni", "spaghetti", "kolson", "bake parlor"],
+        "oil" => ["cooking oil", "oil bottle", "ghee", "tel", "dalda", "meezan", "habib"],
+        "sugar" => ["sugar", "cheeni"],
+        "salt" => ["salt", "namak", "national salt", "iodized salt"]
+    ];
+
+    $tokens = explode(' ', $cleanedEn);
+    $expandedTokens = [];
+    foreach ($tokens as $tok) {
+        $expandedTokens[] = $romanUrduMap[$tok] ?? $tok;
+    }
+    $expandedEn = implode(' ', $expandedTokens);
+
+    $keyNounList = [
+        "milk", "egg", "eggs", "cheese", "butter", "banana", "bananas", "apple", "apples",
+        "orange", "oranges", "mango", "mangoes", "tomato", "tomatoes", "potato", "potatoes",
+        "onion", "onions", "carrot", "carrots", "chicken", "beef", "qeema", "fish", "salmon",
+        "water", "tea", "chai", "rice", "pasta", "oil", "ghee", "sugar", "salt", "masala",
+        "bread", "flour", "atta", "daal", "lentil", "biscuit", "yogurt", "dahi"
+    ];
+
+    $bestProduct = null;
+    $maxScore = 0;
+
+    foreach ($productsList as $p) {
+        $pName = normalizeStringPHP($p['name'] ?? '');
+        $pNameUr = normalizeStringPHP($p['nameUr'] ?? ($p['name_ur'] ?? ''));
+        $pNameCleaned = $cleanNoise($pName);
+        if (!$pNameCleaned) $pNameCleaned = $pName;
+
+        $score = 0;
+
+        // Cleaned Exact Match
+        if ($pNameCleaned === $cleanedEn || $pNameCleaned === $expandedEn) {
+            $score = max($score, 98);
+        }
+
+        // Synonym Match
+        if (isset($synonymsMap[$cleanedEn]) || isset($synonymsMap[$expandedEn])) {
+            $synList = $synonymsMap[$cleanedEn] ?? ($synonymsMap[$expandedEn] ?? []);
+            foreach ($synList as $syn) {
+                if (strpos($pName, $syn) !== false || strpos($pNameCleaned, $syn) !== false) {
+                    $score = max($score, 92);
+                    break;
+                }
+            }
+        }
+
+        // Substring Match
+        if (strlen($cleanedEn) >= 3 && strlen($pNameCleaned) >= 3) {
+            if (strpos($pNameCleaned, $cleanedEn) !== false || strpos($cleanedEn, $pNameCleaned) !== false) {
+                $score = max($score, 85);
+            }
+            if (strpos($pNameCleaned, $expandedEn) !== false || strpos($expandedEn, $pNameCleaned) !== false) {
+                $score = max($score, 88);
+            }
+        }
+
+        if (strlen($rawEn) >= 3 && strlen($pName) >= 3) {
+            if (strpos($pName, $rawEn) !== false || strpos($rawEn, $pName) !== false) {
+                $score = max($score, 80);
+            }
+        }
+
+        if (mb_strlen($rawUr, 'UTF-8') >= 2 && mb_strlen($pNameUr, 'UTF-8') >= 2) {
+            if (mb_strpos($pNameUr, $rawUr, 0, 'UTF-8') !== false || mb_strpos($rawUr, $pNameUr, 0, 'UTF-8') !== false) {
+                $score = max($score, 85);
+            }
+        }
+
+        // Token Overlap Score
+        $tokensScanned = array_filter(explode(' ', $expandedEn), function($t) { return strlen($t) > 1; });
+        $tokensProduct = array_filter(explode(' ', $pNameCleaned), function($t) { return strlen($t) > 1; });
+
+        if (!empty($tokensScanned) && !empty($tokensProduct)) {
+            $matches = 0;
+            foreach ($tokensScanned as $st) {
+                $stSingular = stripPluralEndingsPHP($st);
+                foreach ($tokensProduct as $pt) {
+                    $ptSingular = stripPluralEndingsPHP($pt);
+                    if ($st === $pt || $stSingular === $ptSingular || (strlen($st) >= 3 && strlen($pt) >= 3 && (strpos($st, $pt) !== false || strpos($pt, $st) !== false))) {
+                        $matches++;
+                        break;
+                    }
+                }
+            }
+            $overlapRatio = (2 * $matches) / (count($tokensScanned) + count($tokensProduct));
+            if ($overlapRatio > 0) {
+                $tokenScore = (int)round(55 + $overlapRatio * 35);
+                $score = max($score, $tokenScore);
+            }
+        }
+
+        // Key Noun Match
+        foreach ($keyNounList as $noun) {
+            $nounSingular = stripPluralEndingsPHP($noun);
+            $isScannedHasNoun = (strpos($expandedEn, $noun) !== false || strpos($expandedEn, $nounSingular) !== false);
+            $isProductHasNoun = (strpos($pName, $noun) !== false || strpos($pName, $nounSingular) !== false || strpos($pNameCleaned, $noun) !== false);
+            if ($isScannedHasNoun && $isProductHasNoun) {
+                $score = max($score, 70);
+            }
+        }
+
+        // Levenshtein Spelling Similarity
+        $simCleaned = getSpellingSimilarityPHP($expandedEn, $pNameCleaned);
+        $simRaw = getSpellingSimilarityPHP($rawEn, $pName);
+        $maxSim = max($simCleaned, $simRaw);
+
+        if ($maxSim >= 0.50) {
+            $levScore = (int)round($maxSim * 80);
+            $score = max($score, $levScore);
+        }
+
+        if ($score > $maxScore) {
+            $maxScore = $score;
+            $bestProduct = $p;
+        }
+    }
+
+    if ($maxScore >= 50 && $bestProduct) {
+        return $bestProduct;
+    }
+
+    return null;
+}
+
+function cleanOcrArtifactsPHP($text) {
+    if (!$text || !is_string($text)) return "";
+    $text = preg_replace('/[|│┃]/u', ' ', $text);
+    $text = preg_replace('/[~`^]/u', '', $text);
+    $text = preg_replace('/_{2,}/u', ' ', $text);
+    $text = preg_replace('/[ \t]+/u', ' ', $text);
+    $text = preg_replace('/\r\n/u', "\n", $text);
+    $text = preg_replace('/\n{3,}/u', "\n\n", $text);
+    $text = preg_replace('/\b1L\b|\b1 L\b/iu', '1L', $text);
+    $text = preg_replace('/\b1kg\b|\b1 kg\b/iu', '1kg', $text);
+    $text = preg_replace('/\b2kg\b|\b2 kg\b/iu', '2kg', $text);
+    $text = preg_replace('/\b5kg\b|\b5 kg\b/iu', '5kg', $text);
+    return trim($text);
+}
+
+function parseOcrTextToItemsPHP($ocrText, $resolvedProducts = []) {
+    if (!$ocrText || !is_string($ocrText)) return [];
+    $cleanedText = cleanOcrArtifactsPHP($ocrText);
+
+    $rawLines = preg_split('/\r?\n|(?<=[a-zA-Z0-9\)\x{0600}-\x{06FF}])\s*(?=\d+[\.\)\-]\s*)/u', $cleanedText);
+    $rawLines = array_filter(array_map('trim', $rawLines));
+
+    $noiseKeywordsExact = [
+        "total", "subtotal", "sub-total", "tax", "gst", "vat", "discount", "balance", "change",
+        "cash", "visa", "mastercard", "invoice", "receipt", "date", "amount", "tax invoice",
+        "thank you", "welcome", "cashier", "bill #", "items count", "item count", "paid",
+        "tel", "phone", "address", "market", "store", "supermarket", "mart", "qty total",
+        "gross amt", "net amt", "total amount", "item qty price total", "item quantity price",
+        "shopping list", "grocery list", "bazaar", "bazar", "order summary", "thank you for shopping"
+    ];
+
+    $extractedItems = [];
+
+    foreach ($rawLines as $originalLine) {
+        $line = trim($originalLine);
+        if (strlen($line) < 2) continue;
+        $lower = strtolower(preg_replace('/[^a-z0-9]/i', ' ', $line));
+        $lower = trim($lower);
+
+        if (preg_match('/^[\-\*\=\.\:\,\>\#\(\)\|\+\/_]+$/', $line)) continue;
+        if (preg_match('/^(\-{3,}|={3,}|\*{3,})$/', $line)) continue;
+        if (strpos($lower, 'qty') !== false && (strpos($lower, 'price') !== false || strpos($lower, 'item') !== false || strpos($lower, 'total') !== false || strpos($lower, 'desc') !== false)) continue;
+
+        $noiseSubstrings = [
+            "subtotal", "grand total", "net amount", "gross amount", "total amount", "net payable",
+            "total payable", "amount due", "balance due", "cash received", "cash paid", "change due",
+            "change returned", "tax invoice", "sales tax", "gst", "vat", "cashier", "pos slip",
+            "thank you", "welcome", "customer copy", "invoice no", "receipt no", "bill #", "tel:", "phone:",
+            "address:", "pvt ltd", "cash & carry", "supermarket", "super market", "superstore", "mart"
+        ];
+
+        $hasNoise = false;
+        foreach ($noiseSubstrings as $ns) {
+            if (strpos($lower, $ns) !== false) {
+                $hasNoise = true;
+                break;
+            }
+        }
+        if ($hasNoise) continue;
+        if (preg_match('/^(total|subtotal|sub-total|net total|grand total|amount payable|net payable|payable|cash|change|balance|paid)\b/i', $line)) continue;
+        if (in_array($lower, $noiseKeywordsExact)) continue;
+        if (preg_match('/^[\d\s.,\/:\-\#\(\)\|\+]+$/', $line)) continue;
+
+        $qty = 1;
+        $unit = "item";
+        $unitUr = "عدد";
+        $price = 0;
+
+        $line = preg_replace('/^\s*(?:\d+[\.\)\-]|[\-\*•\>\✓\✔\xbb])\s*/u', '', $line);
+        $line = trim($line);
+
+        if (preg_match('/^\s*(\d{1,3})\s*(?:x|\*|@|pcs|pc|packs|pkt|doz|dozen)?\s+([a-zA-Z\x{0600}-\x{06FF}].*)/iu', $line, $leadingMatch)) {
+            $q = (int)$leadingMatch[1];
+            if ($q > 0 && $q <= 100) {
+                $qty = $q;
+                $line = trim($leadingMatch[2]);
+            }
+        }
+
+        if (preg_match('/^(.*?)(?:[\-–—@=]|rs\.?|pkr\.?|\$)*\s*([\d,]+(?:\.\d+)?)\s*(?:x|\*|@|pcs|pack|pkts)?\s*(\d+)?\s*(?:=|\s)\s*(?:rs\.?|pkr\.?|\$)?\s*([\d,]+(?:\.\d+)?)?$/i', $line, $formulaMatch) && strlen(trim($formulaMatch[1])) >= 2) {
+            $candidateName = trim(preg_replace('/[\-–—@=]+$/u', '', $formulaMatch[1]));
+            $p1 = (float)str_replace(',', '', $formulaMatch[2]);
+            $p2 = !empty($formulaMatch[3]) ? (int)$formulaMatch[3] : null;
+            $p3 = !empty($formulaMatch[4]) ? (float)str_replace(',', '', $formulaMatch[4]) : null;
+
+            if (strlen($candidateName) >= 2) {
+                $line = $candidateName;
+                if ($p2 && $p2 > 0 && $p2 <= 100) $qty = $p2;
+                if ($p3 && $p3 > 0) $price = $p1 > 0 ? $p1 : round($p3 / $qty);
+                else if ($p1 > 0) $price = $p1;
+            }
+        } else if (preg_match('/^(.*?)\s+((?:(?:x|@|=|rs\.?|pkr\.?|\$)?\s*[\d,]+(?:\.\d+)?\s*)+)$/i', $line, $trailingBlock)) {
+            $candidateName = trim($trailingBlock[1]);
+            $rawNumsStr = preg_replace('/x|@|=|rs\.?|pkr\.?|\$/i', ' ', $trailingBlock[2]);
+            $rawNums = array_filter(array_map(function($s) { return (float)str_replace(',', '', trim($s)); }, preg_split('/\s+/', trim($rawNumsStr))));
+
+            if (strlen($candidateName) >= 2 && !empty($rawNums)) {
+                $line = $candidateName;
+                $numsArr = array_values($rawNums);
+                if (count($numsArr) === 3) {
+                    if ($numsArr[0] > 0 && $numsArr[0] <= 50 && floor($numsArr[0]) == $numsArr[0]) {
+                        $qty = (int)$numsArr[0];
+                        $price = $numsArr[1];
+                    } else {
+                        $price = $numsArr[1] > 0 ? $numsArr[1] : $numsArr[0];
+                    }
+                } else if (count($numsArr) === 2) {
+                    if ($numsArr[0] > 0 && $numsArr[0] <= 20 && floor($numsArr[0]) == $numsArr[0] && $numsArr[1] > $numsArr[0] * 5) {
+                        $qty = (int)$numsArr[0];
+                        $price = round($numsArr[1] / $numsArr[0]);
+                    } else {
+                        $price = $numsArr[1] > 0 ? $numsArr[1] : $numsArr[0];
+                    }
+                } else if (count($numsArr) === 1) {
+                    $price = $numsArr[0];
+                }
+            }
+        }
+
+        if (preg_match('/\b(1\s*kg|2\s*kg|5\s*kg|kg|1\s*l|1\.5\s*l|liter|liters|l|pack|packs|dozen|doz|pcs|pc|g|500g|400g|bottle|bottles)\b/i', $line, $unitMatch)) {
+            $u = strtolower($unitMatch[1]);
+            if (strpos($u, 'kg') !== false) { $unit = "kg"; $unitUr = "کلو"; }
+            else if (strpos($u, 'l') !== false || strpos($u, 'liter') !== false) { $unit = "liter"; $unitUr = "لیٹر"; }
+            else if (strpos($u, 'pack') !== false) { $unit = "pack"; $unitUr = "پیکٹ"; }
+            else if (strpos($u, 'doz') !== false) { $unit = "dozen"; $unitUr = "درجن"; }
+            else if (strpos($u, 'pcs') !== false || strpos($u, 'pc') !== false) { $unit = "pcs"; $unitUr = "عدد"; }
+            else if (strpos($u, 'bottle') !== false) { $unit = "bottle"; $unitUr = "بوتل"; }
+            else if (strpos($u, 'g') !== false) { $unit = "g"; $unitUr = "گرام"; }
+        }
+
+        $cleanName = trim(preg_replace('/^[\s\-\*\.\:\,\>\#\(\)\|]+|[\s\-\*\.\:\,\>\#\(\)\|]+$/u', '', $line));
+        if (empty($cleanName) || strlen($cleanName) < 2) continue;
+
+        $words = preg_split('/\s+/', $cleanName);
+        $cleanName = implode(' ', array_map(function($w) { return ucfirst(strtolower($w)); }, $words));
+
+        $matched = fuzzyMatchProductBackendPHP($cleanName, $cleanName, $resolvedProducts);
+
+        if ($matched) {
+            $pStatus = strtolower(trim((string)($matched['status'] ?? '')));
+            $isInactive = ($pStatus === 'inactive' || $pStatus === 'unavailable');
+            $isOutOfStock = (isset($matched['stock_quantity']) && (int)$matched['stock_quantity'] <= 0) || (isset($matched['stockQuantity']) && (int)$matched['stockQuantity'] <= 0);
+            $isAvailable = !$isInactive && !$isOutOfStock;
+
+            $salePrice = isset($matched['sale_price']) && (float)$matched['sale_price'] > 0 
+                ? (float)$matched['sale_price'] 
+                : (isset($matched['salePrice']) && (float)$matched['salePrice'] > 0 ? (float)$matched['salePrice'] : (float)$matched['price']);
+            $finalPrice = $price > 0 ? $price : ($salePrice > 0 ? $salePrice : (float)$matched['price']);
+
+            $extractedItems[] = [
+                "name" => $matched['name'],
+                "nameUr" => $matched['nameUr'] ?? ($matched['name_ur'] ?? $matched['name']),
+                "category" => $matched['category'] ?? "Grocery",
+                "price" => $finalPrice,
+                "qty" => $qty,
+                "unit" => $matched['unit'] ?? $unit,
+                "unitUr" => $matched['unitUr'] ?? ($matched['unit_ur'] ?? $unitUr),
+                "productId" => (int)$matched['id'],
+                "matched" => $isAvailable,
+                "isCatalogMatch" => true,
+                "isAvailable" => $isAvailable,
+                "status" => $isAvailable ? "Available" : "Unavailable",
+                "currencyCode" => $matched['currencyCode'] ?? "PKR"
+            ];
+        } else {
+            $extractedItems[] = [
+                "name" => $cleanName,
+                "nameUr" => $cleanName,
+                "category" => "Grocery",
+                "price" => $price > 0 ? $price : 150,
+                "qty" => $qty,
+                "unit" => $unit,
+                "unitUr" => $unitUr,
+                "productId" => "scanned_" . (count($extractedItems) + 1) . "_" . time(),
+                "matched" => false,
+                "isCatalogMatch" => false,
+                "isAvailable" => false,
+                "status" => "Unavailable",
+                "currencyCode" => "PKR"
+            ];
+        }
+    }
+
+    // Full-text catalog keyword matching fallback
+    $lowerOcr = strtolower($cleanedText);
+    $existingNames = [];
+    foreach ($extractedItems as $it) {
+        $existingNames[strtolower(trim($it['name']))] = true;
+    }
+
+    foreach ($resolvedProducts as $p) {
+        $pNameLower = strtolower(trim($p['name'] ?? ''));
+        $pNameUrLower = strtolower(trim($p['nameUr'] ?? ($p['name_ur'] ?? '')));
+        if (($pNameLower && strlen($pNameLower) >= 3 && strpos($lowerOcr, $pNameLower) !== false) ||
+            ($pNameUrLower && strlen($pNameUrLower) >= 3 && strpos($lowerOcr, $pNameUrLower) !== false)) {
+            if (!isset($existingNames[$pNameLower])) {
+                $pStatus = strtolower(trim((string)($p['status'] ?? '')));
+                $isInactive = ($pStatus === 'inactive' || $pStatus === 'unavailable');
+                $isOutOfStock = (isset($p['stock_quantity']) && (int)$p['stock_quantity'] <= 0) || (isset($p['stockQuantity']) && (int)$p['stockQuantity'] <= 0);
+                $isAvailable = !$isInactive && !$isOutOfStock;
+
+                $salePrice = isset($p['sale_price']) && (float)$p['sale_price'] > 0 
+                    ? (float)$p['sale_price'] 
+                    : (isset($p['salePrice']) && (float)$p['salePrice'] > 0 ? (float)$p['salePrice'] : (float)($p['price'] ?? 150));
+                
+                $extractedItems[] = [
+                    "name" => $p['name'],
+                    "nameUr" => $p['nameUr'] ?? ($p['name_ur'] ?? $p['name']),
+                    "category" => $p['category'] ?? "Grocery",
+                    "price" => $salePrice > 0 ? $salePrice : 150,
+                    "qty" => 1,
+                    "unit" => $p['unit'] ?? "item",
+                    "unitUr" => $p['unitUr'] ?? ($p['unit_ur'] ?? "عدد"),
+                    "productId" => (int)$p['id'],
+                    "matched" => $isAvailable,
+                    "isCatalogMatch" => true,
+                    "isAvailable" => $isAvailable,
+                    "status" => $isAvailable ? "Available" : "Unavailable",
+                    "currencyCode" => $p['currencyCode'] ?? "PKR"
+                ];
+                $existingNames[$pNameLower] = true;
+            }
+        }
+    }
+
+    return $extractedItems;
+}
+
 switch ($action) {
     case 'health':
         echo json_encode(["status" => "ok", "platform" => "PHP " . phpversion(), "time" => date('Y-m-d H:i:s')]);
         break;
 
     // --- 1. USER AUTH DIRECTIVES
+    case 'send_verification_code':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method not permitted"]);
+            break;
+        }
+        $body = getRequestBody();
+        $email = isset($body['email']) ? trim($body['email']) : '';
+        if (!$email) {
+            http_response_code(400);
+            echo json_encode(["error" => "Email address is required."]);
+            break;
+        }
+        $cleanEmail = strtolower($email);
+
+        // Generate 6-digit random verification code
+        $code = (string)rand(100000, 999999);
+        $expiresAt = (time() + 600) * 1000; // 10 minutes validity in ms
+
+        $subject = "VoxCart - Security Verification Code";
+        $emailResult = sendVerificationEmailPHP($cleanEmail, $subject, $code);
+
+        if (!$emailResult["success"]) {
+            http_response_code(500);
+            echo json_encode(["error" => "Failed to deliver verification code to " . $cleanEmail . ". " . ($emailResult["error"] ?? "Please check SMTP configuration.")]);
+            break;
+        }
+
+        // Store code only if mail sent successfully
+        $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+        $delStmt->execute([$cleanEmail]);
+        $insStmt = $conn->prepare("INSERT INTO verifications (email, code, expires_at, attempts) VALUES (?, ?, ?, 0)");
+        $insStmt->execute([$cleanEmail, $code, $expiresAt]);
+
+        echo json_encode([
+            "success" => true,
+            "message" => "A unique 6-digit verification code has been sent to " . $cleanEmail . ". Please check your email inbox.",
+            "email" => $cleanEmail
+        ]);
+        break;
+
+    case 'verify_code':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method not permitted"]);
+            break;
+        }
+        $body = getRequestBody();
+        $email = isset($body['email']) ? trim($body['email']) : '';
+        $code = isset($body['code']) ? trim($body['code']) : '';
+        if (!$email || !$code) {
+            http_response_code(400);
+            echo json_encode(["error" => "Email and verification code are required."]);
+            break;
+        }
+        $cleanEmail = strtolower($email);
+
+        $stmt = $conn->prepare("SELECT * FROM verifications WHERE LOWER(email) = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$cleanEmail]);
+        $ver = $stmt->fetch();
+
+        if (!$ver) {
+            http_response_code(400);
+            echo json_encode(["error" => "No verification code requested or session expired. Please request a new code."]);
+            break;
+        }
+
+        $nowMs = time() * 1000;
+        if ($nowMs > (float)$ver['expires_at']) {
+            $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+            $delStmt->execute([$cleanEmail]);
+            http_response_code(400);
+            echo json_encode(["error" => "Verification code has expired. Please request a new code."]);
+            break;
+        }
+
+        if ((int)$ver['attempts'] >= 5) {
+            $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+            $delStmt->execute([$cleanEmail]);
+            http_response_code(400);
+            echo json_encode(["error" => "Too many failed attempts. Please request a new verification code."]);
+            break;
+        }
+
+        if ($ver['code'] !== $code) {
+            $updStmt = $conn->prepare("UPDATE verifications SET attempts = attempts + 1 WHERE id = ?");
+            $updStmt->execute([$ver['id']]);
+            http_response_code(400);
+            echo json_encode(["error" => "Incorrect verification code. Please check and try again."]);
+            break;
+        }
+
+        // Verified! Clean up
+        $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+        $delStmt->execute([$cleanEmail]);
+
+        echo json_encode([
+            "success" => true,
+            "verified" => true,
+            "message" => "Email address verified successfully!"
+        ]);
+        break;
+
     case 'login':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
@@ -719,6 +1509,7 @@ switch ($action) {
         $body = getRequestBody();
         $email = isset($body['email']) ? trim($body['email']) : '';
         $password = isset($body['password']) ? $body['password'] : '';
+        $verificationCode = isset($body['verificationCode']) ? trim($body['verificationCode']) : (isset($body['code']) ? trim($body['code']) : '');
 
         if (!$email || !$password) {
             http_response_code(400);
@@ -730,10 +1521,70 @@ switch ($action) {
         $stmt->execute([strtolower($email)]);
         $user = $stmt->fetch();
 
-        if (!$user || $user['password'] !== $password) {
-            http_response_code(401);
-            echo json_encode(["error" => "Invalid email or password"]);
-            break;
+        if (!$user) {
+            // If user doesn't exist yet but valid verification code is provided, auto-create user
+            if ($verificationCode) {
+                $stmtVer = $conn->prepare("SELECT * FROM verifications WHERE LOWER(email) = ? ORDER BY id DESC LIMIT 1");
+                $stmtVer->execute([strtolower($email)]);
+                $ver = $stmtVer->fetch();
+                $nowMs = time() * 1000;
+                if ($ver && $ver['code'] === $verificationCode && $nowMs <= (float)$ver['expires_at']) {
+                    $userId = "usr_" . substr(md5(uniqid(mt_rand(), true)), 0, 8);
+                    $userName = explode('@', $email)[0];
+                    $insUser = $conn->prepare("INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, 'customer')");
+                    $insUser->execute([$userId, $userName, strtolower($email), $password ? $password : 'Default123!']);
+                    $user = [
+                        "id" => $userId,
+                        "name" => $userName,
+                        "email" => strtolower($email),
+                        "role" => "customer"
+                    ];
+                    $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+                    $delStmt->execute([strtolower($email)]);
+                } else {
+                    http_response_code(401);
+                    echo json_encode(["error" => "Invalid verification code or user account not found."]);
+                    break;
+                }
+            } else {
+                http_response_code(401);
+                echo json_encode(["error" => "Invalid email or password."]);
+                break;
+            }
+        } else {
+            if ($password && $user['password'] !== $password && $user['password'] !== hash('sha256', $password)) {
+                http_response_code(401);
+                echo json_encode(["error" => "Invalid email or password"]);
+                break;
+            }
+
+            if ($verificationCode) {
+                $stmtVer = $conn->prepare("SELECT * FROM verifications WHERE LOWER(email) = ? ORDER BY id DESC LIMIT 1");
+                $stmtVer->execute([strtolower($email)]);
+                $ver = $stmtVer->fetch();
+                if (!$ver) {
+                    http_response_code(400);
+                    echo json_encode(["error" => "Verification code expired or not requested. Please request a new code."]);
+                    break;
+                }
+                $nowMs = time() * 1000;
+                if ($nowMs > (float)$ver['expires_at']) {
+                    $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+                    $delStmt->execute([strtolower($email)]);
+                    http_response_code(400);
+                    echo json_encode(["error" => "Verification code has expired. Please request a new code."]);
+                    break;
+                }
+                if ($ver['code'] !== $verificationCode) {
+                    $updStmt = $conn->prepare("UPDATE verifications SET attempts = attempts + 1 WHERE id = ?");
+                    $updStmt->execute([$ver['id']]);
+                    http_response_code(400);
+                    echo json_encode(["error" => "Incorrect verification code. Please enter the valid code."]);
+                    break;
+                }
+                $delStmt = $conn->prepare("DELETE FROM verifications WHERE LOWER(email) = ?");
+                $delStmt->execute([strtolower($email)]);
+            }
         }
 
         // Return user context safely
@@ -743,6 +1594,181 @@ switch ($action) {
             "email" => $user['email'],
             "role" => $user['role']
         ]);
+        break;
+
+    case 'submit_feedback':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method not permitted"]);
+            break;
+        }
+        $body = getRequestBody();
+        $userId = isset($body['userId']) ? trim($body['userId']) : 'guest';
+        $userName = isset($body['userName']) ? trim($body['userName']) : 'Anonymous User';
+        $userEmail = isset($body['userEmail']) ? trim($body['userEmail']) : 'guest@voxcart.com';
+        $type = isset($body['type']) ? trim($body['type']) : 'feedback';
+        $subject = isset($body['subject']) ? trim($body['subject']) : '';
+        $message = isset($body['message']) ? trim($body['message']) : '';
+        $rating = isset($body['rating']) ? (int)$body['rating'] : 5;
+
+        if (!$subject || !$message) {
+            http_response_code(400);
+            echo json_encode(["error" => "Subject and message content are required."]);
+            break;
+        }
+
+        $id = "fb_" . substr(md5(uniqid(mt_rand(), true)), 0, 10);
+        $createdAt = date('Y-m-d H:i:s');
+
+        $stmt = $conn->prepare("INSERT INTO feedback (id, user_id, user_name, user_email, type, subject, message, rating, status, admin_response, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', NULL, ?)");
+        $stmt->execute([$id, $userId, $userName, $userEmail, $type, $subject, $message, $rating, $createdAt]);
+
+        $newFeedback = [
+            "id" => $id,
+            "userId" => $userId,
+            "userName" => $userName,
+            "userEmail" => $userEmail,
+            "type" => $type,
+            "subject" => $subject,
+            "message" => $message,
+            "rating" => $rating,
+            "status" => "Pending",
+            "adminResponse" => null,
+            "createdAt" => $createdAt,
+            "repliedAt" => null
+        ];
+
+        echo json_encode([
+            "success" => true,
+            "feedback" => $newFeedback,
+            "message" => "Your submission has been received successfully! Thank you for your feedback."
+        ]);
+        break;
+
+    case 'get_feedback':
+        $userId = isset($_GET['userId']) ? trim($_GET['userId']) : null;
+        $email = isset($_GET['email']) ? trim($_GET['email']) : null;
+
+        if ($userId && $userId !== 'usr_admin') {
+            $stmt = $conn->prepare("SELECT * FROM feedback WHERE user_id = ? OR LOWER(user_email) = ? ORDER BY created_at DESC");
+            $stmt->execute([$userId, strtolower($email ? $email : '')]);
+        } else {
+            $stmt = $conn->prepare("SELECT * FROM feedback ORDER BY created_at DESC");
+            $stmt->execute();
+        }
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $result = [];
+        foreach ($rows as $r) {
+            $result[] = [
+                "id" => $r['id'],
+                "userId" => $r['user_id'],
+                "userName" => $r['user_name'],
+                "userEmail" => $r['user_email'],
+                "type" => $r['type'],
+                "subject" => $r['subject'],
+                "message" => $r['message'],
+                "rating" => (int)$r['rating'],
+                "status" => $r['status'],
+                "adminResponse" => $r['admin_response'],
+                "createdAt" => $r['created_at'],
+                "repliedAt" => $r['replied_at']
+            ];
+        }
+        echo json_encode($result);
+        break;
+
+    case 'reply_feedback':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method not permitted"]);
+            break;
+        }
+        $id = isset($_GET['id']) ? trim($_GET['id']) : '';
+        $body = getRequestBody();
+        $adminResponse = isset($body['adminResponse']) ? trim($body['adminResponse']) : '';
+
+        if (!$id || !$adminResponse) {
+            http_response_code(400);
+            echo json_encode(["error" => "ID and response message are required."]);
+            break;
+        }
+
+        $repliedAt = date('Y-m-d H:i:s');
+        $stmt = $conn->prepare("UPDATE feedback SET status = 'Replied', admin_response = ?, replied_at = ? WHERE id = ?");
+        $stmt->execute([$adminResponse, $repliedAt, $id]);
+
+        $fetchStmt = $conn->prepare("SELECT * FROM feedback WHERE id = ?");
+        $fetchStmt->execute([$id]);
+        $r = $fetchStmt->fetch();
+
+        echo json_encode([
+            "success" => true,
+            "feedback" => $r ? [
+                "id" => $r['id'],
+                "userId" => $r['user_id'],
+                "userName" => $r['user_name'],
+                "userEmail" => $r['user_email'],
+                "type" => $r['type'],
+                "subject" => $r['subject'],
+                "message" => $r['message'],
+                "rating" => (int)$r['rating'],
+                "status" => $r['status'],
+                "adminResponse" => $r['admin_response'],
+                "createdAt" => $r['created_at'],
+                "repliedAt" => $r['replied_at']
+            ] : null,
+            "message" => "Response submitted and sent to user successfully!"
+        ]);
+        break;
+
+    case 'delete_feedback':
+        $id = isset($_GET['id']) ? trim($_GET['id']) : '';
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["error" => "Feedback ID is required."]);
+            break;
+        }
+        $stmt = $conn->prepare("DELETE FROM feedback WHERE id = ?");
+        $stmt->execute([$id]);
+        echo json_encode(["success" => true, "message" => "Feedback entry deleted successfully."]);
+        break;
+
+    case 'reset_password':
+        $body = getRequestBody();
+        $email = isset($body['email']) ? trim($body['email']) : '';
+        $newPassword = isset($body['newPassword']) ? $body['newPassword'] : '';
+        if (!$email || !$newPassword) {
+            http_response_code(400);
+            echo json_encode(["error" => "Email and new password are required"]);
+            break;
+        }
+        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE LOWER(email) = ?");
+        $stmt->execute([$newPassword, strtolower($email)]);
+        echo json_encode(["success" => true, "message" => "Password reset successfully"]);
+        break;
+
+    case 'update_password':
+        $body = getRequestBody();
+        $userId = isset($body['userId']) ? trim($body['userId']) : '';
+        $currentPassword = isset($body['currentPassword']) ? $body['currentPassword'] : '';
+        $newPassword = isset($body['newPassword']) ? $body['newPassword'] : '';
+        if (!$userId || !$currentPassword || !$newPassword) {
+            http_response_code(400);
+            echo json_encode(["error" => "All parameters required"]);
+            break;
+        }
+        $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $usr = $stmt->fetch();
+        if (!$usr || ($usr['password'] !== $currentPassword && $usr['password'] !== hash('sha256', $currentPassword))) {
+            http_response_code(400);
+            echo json_encode(["error" => "Current password is incorrect"]);
+            break;
+        }
+        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+        $stmt->execute([$newPassword, $userId]);
+        echo json_encode(["success" => true, "message" => "Password updated successfully"]);
         break;
 
     case 'register':
@@ -1302,7 +2328,7 @@ switch ($action) {
             $paymentStatus = isset($body['paymentStatus']) ? trim($body['paymentStatus']) : 'Pending';
             $paymentDetails = isset($body['paymentDetails']) ? json_encode($body['paymentDetails']) : '{}';
 
-            $stmt = $conn->prepare("INSERT INTO orders (id, user_id, user_email, items_json, subtotal, tax, total, currency, status, payment_method, payment_details, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO orders (id, user_id, user_email, items_json, subtotal, tax, total, currency, status, payment_method, payment_details, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Processing', ?, ?, ?)");
             $stmt->execute([$orderId, $userId, $userEmail, $itemsJson, $subtotal, $tax, $total, $currency, $paymentMethod, $paymentDetails, $paymentStatus]);
 
             // Clear user cart
@@ -1350,6 +2376,19 @@ switch ($action) {
         if (!$orderId || !$status) {
             http_response_code(400);
             echo json_encode(["error" => "Missing orderId or status"]);
+            break;
+        }
+
+        if ($status === 'Pending') {
+            http_response_code(400);
+            echo json_encode(["error" => "Status 'Pending' cannot be selected for status updates."]);
+            break;
+        }
+
+        if ($status === 'Cancelled') {
+            $stmt = $conn->prepare("DELETE FROM orders WHERE id = ?");
+            $stmt->execute([$orderId]);
+            echo json_encode(["success" => true, "message" => "Order cancelled and deleted automatically"]);
             break;
         }
 
@@ -1892,318 +2931,6 @@ switch ($action) {
         echo json_encode(["success" => true, "message" => "User deleted successfully"]);
         break;
 
-    case 'ocr':
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            http_response_code(405);
-            echo json_encode(["error" => "Method not permitted"]);
-            break;
-        }
-        $body = getRequestBody();
-        $imageBase64 = isset($body['imageBase64']) ? $body['imageBase64'] : '';
-        $mimeType = isset($body['mimeType']) ? $body['mimeType'] : 'image/jpeg';
-
-        if (!$imageBase64) {
-            http_response_code(400);
-            echo json_encode(["error" => "Image payload is required"]);
-            break;
-        }
-
-        // Get GEMINI_API_KEY (Checks db.php variable, environment, and multiple .env paths)
-        $apiKey = '';
-        if (isset($gemini_api_key) && $gemini_api_key !== '' && strpos($gemini_api_key, 'YourActualGeminiAPIKeyHere') === false) {
-            $apiKey = $gemini_api_key;
-        }
-        if (!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) {
-            $apiKey = getenv('GEMINI_API_KEY');
-        }
-        if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && isset($_ENV['GEMINI_API_KEY'])) {
-            $apiKey = $_ENV['GEMINI_API_KEY'];
-        }
-        if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && isset($_SERVER['GEMINI_API_KEY'])) {
-            $apiKey = $_SERVER['GEMINI_API_KEY'];
-        }
-
-        // List of possible .env file paths to scan
-        $envPaths = [
-            __DIR__ . '/../.env',
-            __DIR__ . '/.env',
-            __DIR__ . '/../../.env'
-        ];
-        foreach ($envPaths as $envPath) {
-            if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && file_exists($envPath)) {
-                $envLines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-                foreach ($envLines as $line) {
-                    $line = trim($line);
-                    if (strpos($line, '#') === 0) continue;
-                    if (strpos($line, '=') !== false) {
-                        list($name, $value) = explode('=', $line, 2);
-                        if (trim($name) === 'GEMINI_API_KEY') {
-                            $val = trim(trim($value), " \t\n\r\0\x0B\"'");
-                            if (strpos($val, 'YourActualGeminiAPIKeyHere') === false) {
-                                $apiKey = $val;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) {
-            $apiKey = '';
-        }
-
-        if (!$apiKey) {
-            http_response_code(500);
-            echo json_encode([
-                "error" => "GEMINI_API_KEY is not configured on the PHP server",
-                "message" => "Please configure \$gemini_api_key in 'backend-php-mysql/db.php', or set the GEMINI_API_KEY environment variable, or create a .env file with GEMINI_API_KEY=your_key"
-            ]);
-            break;
-        }
-
-        // Strip headers from data URI if present
-        if (strpos($imageBase64, ',') !== false) {
-            $parts = explode(',', $imageBase64, 2);
-            $imageBase64 = $parts[1];
-        }
-
-        // Fetch products catalog for matching
-        $stmtProducts = $conn->query("SELECT * FROM products WHERE status = 'Active'");
-        $allProductsRaw = $stmtProducts->fetchAll();
-        list($brands, $categories, $subcategories, $units, $currencies) = getLookupData($conn);
-        $resolvedProducts = [];
-        $productListLines = [];
-        foreach ($allProductsRaw as $p) {
-            $rp = resolveProductFlatFields($p, $brands, $categories, $subcategories, $units, $currencies);
-            $resolvedProducts[] = $rp;
-            $productListLines[] = "- ID: {$rp['id']}, English Name: \"{$rp['name']}\", Urdu Name: \"" . (isset($rp['nameUr']) ? $rp['nameUr'] : '') . "\", Category: \"{$rp['category']}\", Price: {$rp['price']}, Unit: \"{$rp['unit']}\", Urdu Unit: \"" . (isset($rp['unitUr']) ? $rp['unitUr'] : '') . "\"";
-        }
-        $productListString = implode("\n", $productListLines);
-
-        // Prepare prompt
-        $prompt = "Analyze this image (which can be a supermarket invoice receipt, printed store memo, handwritten grocery list, commercial listing, or table structure) with deep focus. Your goal is to accurately transcribe and extract EVERY single product or grocery item.
-
-Here is our exact store catalog of AVAILABLE PRODUCTS:
-{$productListString}
-
-INSTRUCTIONS:
-1. Match each item on the image/receipt directly with a store catalog item above if a corresponding product exists (e.g., 'Nestle Milk' or 'Milk' matches 'Whole Milk', 'Farm Eggs' matches 'Large Eggs', 'Cooking Oil 1L' matches 'Cooking Oil', 'Basmati Rice' matches 'White Rice').
-2. Set 'productId' to the integer ID of the matched catalog product and 'matched' to true. Set 'name', 'nameUr', 'category', 'price', 'unit', and 'unitUr' to match the store catalog item.
-3. If an item on the receipt is NOT in our store catalog, set 'productId' to null, 'matched' to false, and extract its scanned name, unit price, quantity, and unit.
-4. Return a strict JSON array matching the schema.";
-
-        // Build payload for Gemini v1 API
-        $payload = [
-            "contents" => [
-                [
-                    "parts" => [
-                        [
-                            "inlineData" => [
-                                "mimeType" => $mimeType,
-                                "data" => $imageBase64
-                            ]
-                        ],
-                        [
-                            "text" => $prompt
-                        ]
-                    ]
-                ]
-            ],
-            "generationConfig" => [
-                "responseMimeType" => "application/json",
-                "responseSchema" => [
-                    "type" => "ARRAY",
-                    "items" => [
-                        "type" => "OBJECT",
-                        "properties" => [
-                            "name" => [ "type" => "STRING" ],
-                            "nameUr" => [ "type" => "STRING" ],
-                            "category" => [ "type" => "STRING" ],
-                            "price" => [ "type" => "NUMBER" ],
-                            "qty" => [ "type" => "INTEGER" ],
-                            "unit" => [ "type" => "STRING" ],
-                            "unitUr" => [ "type" => "STRING" ],
-                            "productId" => [ "type" => "INTEGER" ],
-                            "matched" => [ "type" => "BOOLEAN" ]
-                        ],
-                        "required" => ["name", "nameUr", "category", "price", "qty", "unit", "unitUr"]
-                    ]
-                ]
-            ]
-        ];
-
-        // Call Gemini API via curl with multi-model fallback loop
-        $modelNames = ["gemini-2.5-flash", "gemini-3.6-flash"];
-        $response = false;
-        $httpCode = 0;
-        $curlError = "";
-
-        foreach ($modelNames as $modelName) {
-            $url = "https://generativelanguage.googleapis.com/v1beta/models/" . $modelName . ":generateContent?key=" . $apiKey;
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'User-Agent: aistudio-build'
-            ]);
-
-            // Disable SSL verification to prevent common local/XAMPP certificate authority configuration issues
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            // Add a reasonable timeout
-            curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-
-            $response = curl_exec($ch);
-            $curlError = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($response !== false && $httpCode === 200) {
-                break; // Succeeded!
-            } else {
-                error_log("Gemini OCR failed with model $modelName, trying next fallback. HTTP code: $httpCode, error: $curlError");
-            }
-        }
-
-        // Graceful Fallback if Gemini failed completely
-        if ($response === false || $httpCode !== 200) {
-            error_log("All Gemini API calls failed or quota exceeded. Returning empty array to prevent adding guessed products.");
-            echo json_encode([]);
-            break;
-        }
-
-        $resDecoded = json_decode($response, true);
-        if (!$resDecoded) {
-            error_log("Failed to decode JSON response from Gemini: " . $response);
-            http_response_code(500);
-            echo json_encode(["error" => "Invalid JSON response from Gemini", "raw" => $response]);
-            break;
-        }
-        $text = isset($resDecoded['candidates'][0]['content']['parts'][0]['text']) 
-            ? $resDecoded['candidates'][0]['content']['parts'][0]['text'] 
-            : '[]';
-
-        // Sanitize response
-        if (strpos($text, "```json") !== false) {
-            $parts = explode("```json", $text);
-            $parts = explode("```", $parts[1]);
-            $text = $parts[0];
-        } elseif (strpos($text, "```") !== false) {
-            $parts = explode("```", $text);
-            $parts = explode("```", $parts[1]);
-            $text = $parts[0];
-        }
-        $text = trim($text);
-
-        // Find array bounds
-        $firstBracket = strpos($text, "[");
-        $lastBracket = strrpos($text, "]");
-        if ($firstBracket !== false && $lastBracket !== false && $lastBracket > $firstBracket) {
-            $text = substr($text, $firstBracket, $lastBracket - $firstBracket + 1);
-        }
-
-        $items = json_decode($text, true);
-        if (!is_array($items)) {
-            $items = [];
-        }
-
-        // Map/Format items to standard format and run fuzzy catalog matching
-        $coreTokens = ["milk", "doodh", "egg", "eggs", "anda", "anday", "cheese", "paneer", "butter", "makkhan", "banana", "bananas", "kela", "apple", "apples", "seb", "orange", "kinnow", "tomato", "tomatoes", "tamatar", "potato", "potatoes", "aaloo", "onion", "onions", "piaz", "chicken", "murghi", "beef", "qeema", "meat", "fish", "machli", "salmon", "coke", "cola", "pepsi", "water", "paani", "tea", "chai", "coffee", "rice", "chawal", "pasta", "macaroni", "oil", "ghee", "sugar", "chini", "salt", "namak", "flour", "atta"];
-
-        $formatted = [];
-        $seenNames = [];
-        foreach ($items as $item) {
-            $name = isset($item['name']) ? $item['name'] : (isset($item['itemName']) ? $item['itemName'] : 'Scanned Product');
-            $nameUr = isset($item['nameUr']) ? $item['nameUr'] : (isset($item['urdu_name']) ? $item['urdu_name'] : $name);
-            $category = isset($item['category']) ? $item['category'] : 'Pantry';
-            $price = isset($item['price']) ? (float)$item['price'] : 1.99;
-            $qty = isset($item['qty']) ? (int)$item['qty'] : (isset($item['quantity']) ? (int)$item['quantity'] : 1);
-            if ($qty < 1) $qty = 1;
-            $unit = isset($item['unit']) ? $item['unit'] : 'item';
-            $unitUr = isset($item['unitUr']) ? $item['unitUr'] : 'عدد';
-            $productId = isset($item['productId']) ? $item['productId'] : null;
-            $matched = isset($item['matched']) ? (bool)$item['matched'] : false;
-
-            // Fuzzy Match against catalog if productId not provided or invalid
-            $matchedProduct = null;
-            if ($productId) {
-                foreach ($resolvedProducts as $rp) {
-                    if ((int)$rp['id'] === (int)$productId) {
-                        $matchedProduct = $rp;
-                        break;
-                    }
-                }
-            }
-
-            if (!$matchedProduct) {
-                // Exact or Substring matching
-                $scannedLower = strtolower(trim($name));
-                foreach ($resolvedProducts as $rp) {
-                    $rpNameLower = strtolower(trim($rp['name']));
-                    $rpNameUrLower = strtolower(trim(isset($rp['nameUr']) ? $rp['nameUr'] : (isset($rp['name_ur']) ? $rp['name_ur'] : '')));
-                    if ($scannedLower === $rpNameLower || ($rpNameUrLower && $scannedLower === $rpNameUrLower)) {
-                        $matchedProduct = $rp;
-                        break;
-                    }
-                    if (strlen($rpNameLower) > 2 && (strpos($scannedLower, $rpNameLower) !== false || strpos($rpNameLower, $scannedLower) !== false)) {
-                        $matchedProduct = $rp;
-                        break;
-                    }
-                }
-            }
-
-            if (!$matchedProduct) {
-                // Token Intersection Match
-                $words = explode(" ", strtolower(trim($name)));
-                foreach ($words as $w) {
-                    $wClean = trim($w, ".,/#!$%^&*();:{}=-_`~()");
-                    if (strlen($wClean) > 2 && in_array($wClean, $coreTokens)) {
-                        foreach ($resolvedProducts as $rp) {
-                            $rpNameLower = strtolower($rp['name']);
-                            if (strpos($rpNameLower, $wClean) !== false) {
-                                $matchedProduct = $rp;
-                                break 2;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if ($matchedProduct) {
-                $name = $matchedProduct['name'];
-                $nameUr = isset($matchedProduct['nameUr']) ? $matchedProduct['nameUr'] : (isset($matchedProduct['name_ur']) ? $matchedProduct['name_ur'] : $nameUr);
-                $category = $matchedProduct['category'];
-                $price = (float)$matchedProduct['price'];
-                $unit = $matchedProduct['unit'];
-                $unitUr = isset($matchedProduct['unitUr']) ? $matchedProduct['unitUr'] : (isset($matchedProduct['unit_ur']) ? $matchedProduct['unit_ur'] : $unitUr);
-                $productId = (int)$matchedProduct['id'];
-                $matched = true;
-            }
-
-            $nameKey = strtolower(trim($name));
-            if (!in_array($nameKey, $seenNames)) {
-                $seenNames[] = $nameKey;
-                $formatted[] = [
-                    "name" => $name,
-                    "nameUr" => $nameUr,
-                    "category" => $category,
-                    "price" => $price,
-                    "qty" => $qty,
-                    "unit" => $unit,
-                    "unitUr" => $unitUr,
-                    "productId" => $productId,
-                    "matched" => $matched,
-                    "action" => "add"
-                ];
-            }
-        }
-
-        echo json_encode($formatted);
-        break;
-
     case 'smart_search':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
@@ -2270,10 +2997,10 @@ INSTRUCTIONS:
                     "ingredients" => [
                         ["searchTerms" => ["chicken", "breast", "مرغی"], "fallbackName" => "Chicken Breast", "fallbackNameUr" => "مرغی کا گوشت", "fallbackCategory" => "Meat", "fallbackPrice" => 2237.2, "qty" => 1, "unit" => "kg", "unitUr" => "کلو"],
                         ["searchTerms" => ["rice", "chawal", "چاول"], "fallbackName" => "White Rice", "fallbackNameUr" => "چاول", "fallbackCategory" => "Pantry", "fallbackPrice" => 837.2, "qty" => 1, "unit" => "kg", "unitUr" => "کلو"],
-                        ["searchTerms" => ["onion", "piaz", "پیاز"], "fallbackName" => "Onions", "fallbackNameUr" => "پیاز", "fallbackCategory" => "Vegetables", "fallbackPrice" => 333.2, "qty" => 1, "unit" => "kg", "unitUr" => "کلو"],
-                        ["searchTerms" => ["tomato", "tamatar", "ٹماٹر"], "fallbackName" => "Tomatoes", "fallbackNameUr" => "ٹماٹر", "fallbackCategory" => "Vegetables", "fallbackPrice" => 697.2, "qty" => 1, "unit" => "kg", "unitUr" => "کلو"],
-                        ["searchTerms" => ["potato", "aaloo", "آلو"], "fallbackName" => "Potatoes", "fallbackNameUr" => "آلو", "fallbackCategory" => "Vegetables", "fallbackPrice" => 361.2, "qty" => 1, "unit" => "kg", "unitUr" => "کلو"],
-                        ["searchTerms" => ["oil", "koking", "ککنگ", "تیل"], "fallbackName" => "Cooking Oil", "fallbackNameUr" => "ککنگ آئل", "fallbackCategory" => "Pantry", "fallbackPrice" => 2517.2, "qty" => 1, "unit" => "liter", "unitUr" => "لیٹر"],
+                        ["searchTerms" => ["onion", "piaz", "پیاز"], "fallbackName" => "Onions", "fallbackNameUr" => "پیاز", "fallbackCategory" => "Vegetables", "fallbackPrice" => 333.2, "qty" => 250, "unit" => "g", "unitUr" => "گرام"],
+                        ["searchTerms" => ["tomato", "tamatar", "ٹماٹر"], "fallbackName" => "Tomatoes", "fallbackNameUr" => "ٹماٹر", "fallbackCategory" => "Vegetables", "fallbackPrice" => 697.2, "qty" => 250, "unit" => "g", "unitUr" => "گرام"],
+                        ["searchTerms" => ["potato", "aaloo", "آلو"], "fallbackName" => "Potatoes", "fallbackNameUr" => "آلو", "fallbackCategory" => "Vegetables", "fallbackPrice" => 361.2, "qty" => 250, "unit" => "g", "unitUr" => "گرام"],
+                        ["searchTerms" => ["oil", "koking", "ککنگ", "تیل"], "fallbackName" => "Cooking Oil", "fallbackNameUr" => "ککنگ آئل", "fallbackCategory" => "Pantry", "fallbackPrice" => 2517.2, "qty" => 250, "unit" => "ml", "unitUr" => "ملی لیٹر"],
                         ["searchTerms" => ["salt", "namak", "نمک"], "fallbackName" => "Salt", "fallbackNameUr" => "نمک", "fallbackCategory" => "Pantry", "fallbackPrice" => 361.2, "qty" => 1, "unit" => "pack", "unitUr" => "پیکٹ"],
                         ["searchTerms" => ["yogurt", "dahi", "دہی"], "fallbackName" => "Yogurt / Dahi", "fallbackNameUr" => "دہی", "fallbackCategory" => "Dairy", "fallbackPrice" => 300.0, "qty" => 1, "unit" => "pack", "unitUr" => "پیکٹ"],
                         ["searchTerms" => ["masala", "spices", "مصالحہ"], "fallbackName" => "Biryani Masala", "fallbackNameUr" => "بریانی مصالحہ", "fallbackCategory" => "Pantry", "fallbackPrice" => 150.0, "qty" => 1, "unit" => "pack", "unitUr" => "پیکٹ"]
@@ -2563,6 +3290,436 @@ INSTRUCTIONS:
         echo json_encode($apiResponse);
         break;
 
+    case 'ocr':
+    case 'process_ocr':
+    case 'process-ocr':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method not permitted"]);
+            break;
+        }
+
+        $body = getRequestBody();
+        $rawImageInput = $body['imageBase64'] ?? ($body['file'] ?? ($body['image'] ?? ($body['base64'] ?? ($body['data'] ?? ($_POST['imageBase64'] ?? ($_POST['file'] ?? ($_POST['image'] ?? '')))))));
+        $mimeType = $body['mimeType'] ?? ($body['mime'] ?? ($body['type'] ?? ($_POST['mimeType'] ?? 'image/jpeg')));
+        $clientOcrText = $body['ocrText'] ?? ($body['text'] ?? ($_POST['ocrText'] ?? ''));
+
+        // Check if an image was uploaded via multipart/form-data
+        if (empty($rawImageInput) && !empty($_FILES)) {
+            $uploadedFile = $_FILES['image'] ?? ($_FILES['file'] ?? null);
+            if ($uploadedFile && isset($uploadedFile['tmp_name']) && is_uploaded_file($uploadedFile['tmp_name'])) {
+                $fileBytes = file_get_contents($uploadedFile['tmp_name']);
+                if ($fileBytes !== false) {
+                    $rawImageInput = base64_encode($fileBytes);
+                    if (!empty($uploadedFile['type'])) {
+                        $mimeType = $uploadedFile['type'];
+                    }
+                }
+            }
+        }
+
+        // Fetch products catalog from MySQL database or fallback db_store.json
+        $resolvedProducts = [];
+        if ($conn) {
+            try {
+                $stmtProducts = $conn->query("SELECT * FROM products ORDER BY id ASC");
+                $allProductsRaw = $stmtProducts->fetchAll();
+                list($brands, $categories, $subcategories, $units, $currencies) = getLookupData($conn);
+                foreach ($allProductsRaw as $p) {
+                    $resolvedProducts[] = resolveProductFlatFields($p, $brands, $categories, $subcategories, $units, $currencies);
+                }
+            } catch (Exception $dbEx) {
+                $resolvedProducts = [];
+            }
+        }
+
+        if (empty($resolvedProducts)) {
+            $jsonDbPath = __DIR__ . '/../db_store.json';
+            if (file_exists($jsonDbPath)) {
+                $jsonContent = @file_get_contents($jsonDbPath);
+                $jsonData = json_decode($jsonContent, true);
+                if (isset($jsonData['products']) && is_array($jsonData['products'])) {
+                    $resolvedProducts = $jsonData['products'];
+                }
+            }
+        }
+
+        // Clean base64 string and extract MIME type if provided as data URL
+        $base64Data = $rawImageInput;
+        if (is_string($rawImageInput) && strpos($rawImageInput, 'data:') === 0) {
+            if (preg_match('/^data:([^;]+);base64,(.+)$/s', $rawImageInput, $matches)) {
+                $mimeType = $matches[1];
+                $base64Data = $matches[2];
+            } else {
+                $parts = explode(';base64,', $rawImageInput, 2);
+                if (count($parts) === 2) {
+                    $base64Data = $parts[1];
+                    $typePart = explode(':', $parts[0], 2);
+                    if (count($typePart) === 2) {
+                        $mimeType = $typePart[1];
+                    }
+                }
+            }
+        }
+
+        $base64Data = trim(preg_replace('/\s+/', '', (string)$base64Data));
+        if (empty($mimeType) || strpos($mimeType, '/') === false) {
+            $mimeType = 'image/jpeg';
+        }
+
+        // Retrieve Gemini API Key
+        $apiKey = '';
+        if (isset($gemini_api_key) && $gemini_api_key !== '' && strpos($gemini_api_key, 'YourActualGeminiAPIKeyHere') === false) {
+            $apiKey = $gemini_api_key;
+        }
+        if (!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) {
+            $apiKey = getenv('GEMINI_API_KEY');
+        }
+        if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && isset($_ENV['GEMINI_API_KEY'])) {
+            $apiKey = $_ENV['GEMINI_API_KEY'];
+        }
+        if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && isset($_SERVER['GEMINI_API_KEY'])) {
+            $apiKey = $_SERVER['GEMINI_API_KEY'];
+        }
+
+        $envPaths = [
+            __DIR__ . '/../.env',
+            __DIR__ . '/.env',
+            __DIR__ . '/../../.env'
+        ];
+        foreach ($envPaths as $envPath) {
+            if ((!$apiKey || strpos($apiKey, 'YourActualGeminiAPIKeyHere') !== false) && file_exists($envPath)) {
+                $envLines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                if (is_array($envLines)) {
+                    foreach ($envLines as $line) {
+                        $line = trim($line);
+                        if (strpos($line, '#') === 0) continue;
+                        if (strpos($line, '=') !== false) {
+                            list($name, $value) = explode('=', $line, 2);
+                            if (trim($name) === 'GEMINI_API_KEY') {
+                                $val = trim(trim($value), " \t\n\r\0\x0B\"'");
+                                if (strpos($val, 'YourActualGeminiAPIKeyHere') === false) {
+                                    $apiKey = $val;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        $productsParsed = [];
+        $extractedJsonText = '';
+
+        if ($apiKey && !empty($base64Data)) {
+            $productListLines = [];
+            foreach ($resolvedProducts as $p) {
+                $pId = $p['id'];
+                $pName = addslashes($p['name']);
+                $pNameUr = addslashes($p['nameUr'] ?? ($p['name_ur'] ?? ''));
+                $pCategory = addslashes($p['category']);
+                $pPrice = $p['price'];
+                $pUnit = addslashes($p['unit']);
+                $pUnitUr = addslashes($p['unitUr'] ?? ($p['unit_ur'] ?? 'عدد'));
+                $productListLines[] = "- ID: {$pId}, English Name: \"{$pName}\", Urdu Name: \"{$pNameUr}\", Category: \"{$pCategory}\", Price: {$pPrice}, Unit: \"{$pUnit}\", Urdu Unit: \"{$pUnitUr}\"";
+            }
+            $productListString = implode("\n", $productListLines);
+
+            $promptText = "You are a high-precision OCR and document analysis engine specialized in reading physical paper receipts, supermarket bills, wholesale invoices, POS cash register printouts, handwritten grocery lists, and shopping invoices in English, Urdu, and bilingual formats.\n\n";
+            $promptText .= "Read this image from top to bottom thoroughly. Detect and extract every single purchased product, food item, grocery, beverage, household supply, or line item visible in the image.\n\n";
+            $promptText .= "STORE PRODUCT CATALOG (FOR REFERENCE AND MATCHING ID WHEN APPLICABLE):\n";
+            $promptText .= $productListString . "\n\n";
+            $promptText .= "EXTRACTION INSTRUCTIONS:\n";
+            $promptText .= "1. Extract ALL purchased products/items.\n";
+            $promptText .= "2. For each detected item provide:\n";
+            $promptText .= "   - \"name\": Clean English title of the item (e.g., \"Fresh Milk 1L\", \"Super Basmati Rice 5kg\", \"Eggs 1 Dozen\", \"Cooking Oil 1L\", \"Potatoes 2kg\", \"Tomatoes 1kg\", \"Onions 1kg\", \"Sugar 5kg\", \"Tapal Danedar Tea 430g\").\n";
+            $promptText .= "   - \"nameUr\": Urdu script title for the item (e.g., \"تازہ دودھ\", \"سپر باسپتی چاول\", \"انڈے\", \"کوکنگ آئل\", \"آلو\", \"ٹماٹر\", \"پیاز\", \"چینی\", \"چائے\").\n";
+            $promptText .= "   - \"category\": Category name (e.g. \"Dairy\", \"Grains\", \"Vegetables\", \"Grocery\", \"Beverages\", \"Snacks\").\n";
+            $promptText .= "   - \"price\": Item unit price or line price as a numeric value without currency symbols (e.g. 280, 450, 150).\n";
+            $promptText .= "   - \"qty\": Quantity purchased as a positive integer (default to 1 if not specified).\n";
+            $promptText .= "   - \"unit\": Measurement unit in English (e.g. \"kg\", \"liter\", \"pack\", \"pcs\", \"dozen\", \"bottle\", \"g\", \"item\").\n";
+            $promptText .= "   - \"unitUr\": Measurement unit in Urdu (e.g. \"کلو\", \"لیٹر\", \"پیکٹ\", \"عدد\", \"درجن\", \"بوتل\", \"گرام\").\n";
+            $promptText .= "   - \"productId\": If the item matches an item in the STORE PRODUCT CATALOG, provide its exact store ID. Otherwise null.\n";
+            $promptText .= "3. EXCLUDE store metadata (store name, branch address, phone number, cashier name, invoice number, date/timestamp).\n";
+            $promptText .= "4. EXCLUDE summary/subtotal lines (subtotal, GST/sales tax, cash paid, change due, grand total, balance).\n";
+            $promptText .= "5. Output format must strictly be a valid JSON object:\n";
+            $promptText .= "{\n";
+            $promptText .= "  \"items\": [\n";
+            $promptText .= "    {\n";
+            $promptText .= "      \"name\": \"Olpers Milk 1L\",\n";
+            $promptText .= "      \"nameUr\": \"اولپرز دودھ 1 لیٹر\",\n";
+            $promptText .= "      \"category\": \"Dairy\",\n";
+            $promptText .= "      \"price\": 280,\n";
+            $promptText .= "      \"qty\": 2,\n";
+            $promptText .= "      \"unit\": \"liter\",\n";
+            $promptText .= "      \"unitUr\": \"لیٹر\",\n";
+            $promptText .= "      \"productId\": 1\n";
+            $promptText .= "    }\n";
+            $promptText .= "  ]\n";
+            $promptText .= "}";
+
+            $geminiPayload = [
+                "contents" => [
+                    [
+                        "parts" => [
+                            [
+                                "inline_data" => [
+                                    "mime_type" => $mimeType,
+                                    "data" => $base64Data
+                                ]
+                            ],
+                            [
+                                "text" => $promptText
+                            ]
+                        ]
+                    ]
+                ],
+                "generationConfig" => [
+                    "responseMimeType" => "application/json"
+                ]
+            ];
+
+            $modelNames = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"];
+
+            foreach ($modelNames as $modelName) {
+                $url = "https://generativelanguage.googleapis.com/v1beta/models/" . $modelName . ":generateContent?key=" . $apiKey;
+                $ch = curl_init($url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($geminiPayload));
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'User-Agent: aistudio-build']);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($response !== false && $httpCode === 200) {
+                    $resDecoded = json_decode($response, true);
+                    $extractedJsonText = $resDecoded['candidates'][0]['content']['parts'][0]['text'] ?? '';
+                    if (!empty($extractedJsonText) && strlen(trim($extractedJsonText)) > 2) {
+                        break; // Successfully got JSON from Gemini
+                    }
+                }
+            }
+        }
+
+        // Parse extracted JSON string from Gemini
+        if (!empty($extractedJsonText)) {
+            $cleanText = $extractedJsonText;
+            if (strpos($cleanText, "```json") !== false) {
+                $parts = explode("```json", $cleanText);
+                $parts = explode("```", $parts[1]);
+                $cleanText = $parts[0];
+            } elseif (strpos($cleanText, "```") !== false) {
+                $parts = explode("```", $cleanText);
+                $parts = explode("```", $parts[1]);
+                $cleanText = $parts[0];
+            }
+            $cleanText = trim($cleanText);
+
+            $rawParsed = json_decode($cleanText, true);
+            if (!is_array($rawParsed)) {
+                $firstBracket = strpos($cleanText, "[");
+                $lastBracket = strrpos($cleanText, "]");
+                if ($firstBracket !== false && $lastBracket !== false && $lastBracket > $firstBracket) {
+                    $rawParsed = json_decode(substr($cleanText, $firstBracket, $lastBracket - $firstBracket + 1), true);
+                } else {
+                    $firstObj = strpos($cleanText, "{");
+                    $lastObj = strrpos($cleanText, "}");
+                    if ($firstObj !== false && $lastObj !== false && $lastObj > $firstObj) {
+                        $rawParsed = json_decode(substr($cleanText, $firstObj, $lastObj - $firstObj + 1), true);
+                    }
+                }
+            }
+
+            if (is_array($rawParsed)) {
+                if (isset($rawParsed['items']) && is_array($rawParsed['items'])) {
+                    $productsParsed = $rawParsed['items'];
+                } elseif (isset($rawParsed['products']) && is_array($rawParsed['products'])) {
+                    $productsParsed = $rawParsed['products'];
+                } elseif (isset($rawParsed['data']) && is_array($rawParsed['data'])) {
+                    $productsParsed = $rawParsed['data'];
+                } elseif (isset($rawParsed[0])) {
+                    $productsParsed = $rawParsed;
+                } else {
+                    foreach ($rawParsed as $val) {
+                        if (is_array($val) && count($val) > 0) {
+                            $productsParsed = $val;
+                            break;
+                        }
+                    }
+                    if (empty($productsParsed) && (isset($rawParsed['name']) || isset($rawParsed['itemName']))) {
+                        $productsParsed = [$rawParsed];
+                    }
+                }
+            }
+        }
+
+        // If Gemini was unavailable/empty, execute local server Tesseract OCR on image buffer
+        if (empty($productsParsed) && !empty($base64Data)) {
+            $imgBytes = base64_decode($base64Data);
+            if ($imgBytes !== false) {
+                $tmpImgPath = sys_get_temp_dir() . '/ocr_php_' . uniqid() . '.png';
+                file_put_contents($tmpImgPath, $imgBytes);
+                
+                $ocrText = @shell_exec("tesseract " . escapeshellarg($tmpImgPath) . " stdout -l eng+urd --psm 6 2>/dev/null");
+                if (!$ocrText || strlen(trim($ocrText)) < 3) {
+                    $ocrText = @shell_exec("tesseract " . escapeshellarg($tmpImgPath) . " stdout -l eng 2>/dev/null");
+                }
+                @unlink($tmpImgPath);
+
+                if (!empty($ocrText) && strlen(trim($ocrText)) > 2) {
+                    $parsedFromTesseract = parseOcrTextToItemsPHP($ocrText, $resolvedProducts);
+                    if (!empty($parsedFromTesseract)) {
+                        $productsParsed = $parsedFromTesseract;
+                    }
+                }
+            }
+        }
+
+        // If Gemini was unavailable/empty and client sent OCR text, parse the text
+        if (empty($productsParsed) && !empty($clientOcrText)) {
+            $parsedFromText = parseOcrTextToItemsPHP($clientOcrText, $resolvedProducts);
+            if (!empty($parsedFromText)) {
+                $productsParsed = $parsedFromText;
+            }
+        }
+
+        // Noise line filters
+        $summaryNoiseExact = [
+            'total', 'subtotal', 'tax', 'gst', 'vat', 'discount', 'balance', 'change',
+            'cash', 'visa', 'mastercard', 'invoice', 'receipt', 'date', 'amount',
+            'cashier', 'billing', 'tel', 'phone', 'address', 'store', 'market',
+            'welcome', 'thank you', 'payment', 'card', 'customer', 'shoppe',
+            'bazaar', 'item count', 'items count', 'qty total', 'quantity total',
+            'discount total', 'grand total', 'net total', 'round off', 'gross amt',
+            'net amt', 'total amount'
+        ];
+
+        $formattedProducts = [];
+
+        if (!empty($productsParsed)) {
+            foreach ($productsParsed as $idx => $item) {
+                if (!is_array($item)) continue;
+
+                $rawName = $item['name'] ?? ($item['itemName'] ?? ($item['productName'] ?? ($item['item'] ?? "Scanned Item " . ($idx + 1))));
+                $cleanedName = trim(preg_replace('/^[\s\d\-•*.)\]:]+/', '', (string)$rawName));
+                if (empty($cleanedName)) $cleanedName = (string)$rawName;
+
+                $lowerName = strtolower(trim(preg_replace('/[:#\-*.]/u', '', $cleanedName)));
+                if (strlen($lowerName) < 2 || in_array($lowerName, $summaryNoiseExact) || preg_match('/^\d+$/', $lowerName)) {
+                    continue; // Skip noise line
+                }
+
+                $name = $cleanedName;
+                $nameUr = $item['nameUr'] ?? ($item['name_ur'] ?? ($item['urdu_name'] ?? ($item['urduName'] ?? $name)));
+                $category = $item['category'] ?? ($item['cat'] ?? "Grocery");
+
+                $price = 0;
+                if (isset($item['price']) && is_numeric($item['price'])) {
+                    $parsedPrice = (float)$item['price'];
+                    if ($parsedPrice > 0) $price = $parsedPrice;
+                }
+
+                $qty = 1;
+                if (isset($item['qty']) && is_numeric($item['qty'])) {
+                    $parsedQty = (int)$item['qty'];
+                    if ($parsedQty > 0) $qty = $parsedQty;
+                }
+
+                $unit = $item['unit'] ?? "item";
+                $unitUr = $item['unitUr'] ?? ($item['unit_ur'] ?? "عدد");
+
+                // Product Database Matching against MySQL
+                $matched = null;
+                $itemProductId = $item['productId'] ?? ($item['id'] ?? null);
+                if ($itemProductId && (is_numeric($itemProductId) || preg_match('/^\d+$/', (string)$itemProductId))) {
+                    foreach ($resolvedProducts as $p) {
+                        if ((string)$p['id'] === (string)$itemProductId) {
+                            $matched = $p;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$matched) {
+                    $matched = fuzzyMatchProductBackendPHP($name, $nameUr, $resolvedProducts);
+                }
+
+                if (!$matched) {
+                    $lowerClean = strtolower(trim($name));
+                    foreach ($resolvedProducts as $p) {
+                        $pNameLower = strtolower(trim($p['name'] ?? ''));
+                        $pNameUrLower = strtolower(trim($p['nameUr'] ?? ($p['name_ur'] ?? '')));
+                        if ($pNameLower === $lowerClean || ($pNameUrLower && $pNameUrLower === $lowerClean)) {
+                            $matched = $p;
+                            break;
+                        }
+                    }
+                }
+
+                if ($matched) {
+                    $pStatus = strtolower(trim((string)($matched['status'] ?? '')));
+                    $isInactive = ($pStatus === 'inactive' || $pStatus === 'unavailable');
+                    $isAvailable = !$isInactive;
+
+                    $salePrice = isset($matched['sale_price']) && (float)$matched['sale_price'] > 0 
+                        ? (float)$matched['sale_price'] 
+                        : (isset($matched['salePrice']) && (float)$matched['salePrice'] > 0 ? (float)$matched['salePrice'] : (float)$matched['price']);
+                    
+                    $finalPrice = $price > 0 ? $price : ($salePrice > 0 ? $salePrice : (float)$matched['price']);
+
+                    $formattedProducts[] = [
+                        "name" => $matched['name'],
+                        "nameUr" => $matched['nameUr'] ?? ($matched['name_ur'] ?? $matched['name']),
+                        "category" => $matched['category'] ?? $category,
+                        "price" => $finalPrice,
+                        "qty" => $qty,
+                        "unit" => $matched['unit'] ?? $unit,
+                        "unitUr" => $matched['unitUr'] ?? ($matched['unit_ur'] ?? $unitUr),
+                        "productId" => (int)$matched['id'],
+                        "matched" => true,
+                        "isAvailable" => $isAvailable,
+                        "status" => $isAvailable ? "Available" : "Unavailable",
+                        "currencyCode" => $matched['currencyCode'] ?? "PKR"
+                    ];
+                } else {
+                    $formattedProducts[] = [
+                        "name" => $name,
+                        "nameUr" => $nameUr,
+                        "category" => $category ?: "Grocery",
+                        "price" => $price > 0 ? $price : 150,
+                        "qty" => $qty,
+                        "unit" => $unit,
+                        "unitUr" => $unitUr,
+                        "productId" => "scanned_" . ($idx + 1) . "_" . time(),
+                        "matched" => false,
+                        "isAvailable" => false,
+                        "status" => "Unavailable",
+                        "currencyCode" => "PKR"
+                    ];
+                }
+            }
+        }
+
+        // Deduplicate final scanned items by lowercase name
+        $seen = [];
+        $finalProducts = [];
+        foreach ($formattedProducts as $prod) {
+            $key = strtolower(trim($prod['name']));
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                $finalProducts[] = $prod;
+            }
+        }
+
+        echo json_encode($finalProducts);
+        break;
+
     case 'voice_parse':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
@@ -2652,7 +3809,7 @@ INSTRUCTIONS:
             $prompt .= "   * For ingredients present in our provided AVAILABLE PRODUCTS database (e.g. Chicken Breast, Whole Milk, White Rice, Onions, Tomatoes, Potatoes, Eggs, Sugar, Salt, Cooking Oil), map them to their correct product ID, set matched: true, and match the category, price, and unit.\n";
             $prompt .= "   * For required recipe-specific ingredients or spices NOT in the database (e.g. specific spices like Cardamom/Elaichi, Ginger/Garlic Paste, Yogurt/Dahi, Fresh Mint, Soy Sauce, Coriander, Karahi Masala, Nihari Masala, Pizza Sauce, etc.), STILL extract them as separate items in the JSON array, but set 'matched' to false, 'productId' to null, and 'category' to the best category (e.g. Pantry or Vegetables), price 1.99, and mark them as Unavailable. This ensures they are flagged as Unavailable/out of stock and NOT added to the cart, while still listed in the draft list.\n";
             $prompt .= "   * Here are exact sample expansions for your guidance:\n";
-            $prompt .= "    - \"Chicken Biryani\" / \"Ingredients for Biryani\": Chicken Breast (1 KG, matched: true, productId: 13), White Rice (1 KG, matched: true, productId: 19), Onions (1 KG, matched: true, productId: 11), Tomatoes (1 KG, matched: true, productId: 9), Potatoes (1 KG, matched: true, productId: 10), Cooking Oil (1 Liter, matched: true, productId: 21), Salt (1 Pack, matched: true, productId: 23), Biryani Masala / Spices (1 Pack, matched: false, productId: null, category: Pantry), Ginger Garlic Paste (1 Pack, matched: false, productId: null, category: Pantry), Yogurt / Dahi (1 Pack, matched: false, productId: null, category: Dairy), Fresh Mint / Pudina (1 Bunch, matched: false, productId: null, category: Vegetables).\n";
+            $prompt .= "    - \"Chicken Biryani\" / \"Ingredients for Biryani\": Chicken Breast (1 KG, matched: true, productId: 13), White Rice (1 KG, matched: true, productId: 19), Onions (250 Grams, matched: true, productId: 11), Tomatoes (250 Grams, matched: true, productId: 9), Potatoes (250 Grams, matched: true, productId: 10), Cooking Oil (250 ML, matched: true, productId: 21), Salt (1 Pack, matched: true, productId: 23), Biryani Masala / Spices (1 Pack, matched: false, productId: null, category: Pantry), Ginger Garlic Paste (1 Pack, matched: false, productId: null, category: Pantry), Yogurt / Dahi (1 Pack, matched: false, productId: null, category: Dairy), Fresh Mint / Pudina (1 Bunch, matched: false, productId: null, category: Vegetables).\n";
             $prompt .= "    - \"Tea\" / \"Chai\" / \"Chai Recipe\": Green Tea (1 Box, matched: true, productId: 18), Whole Milk (1 Pack, matched: true, productId: 1), Sugar (1 Pack, matched: true, productId: 22), Ginger / Adrak (1 Piece, matched: false, productId: null, category: Vegetables), Cardamom / Elaichi (1 Pack, matched: false, productId: null, category: Pantry).\n";
             $prompt .= "    - \"Coffee\" / \"Coffee Recipe\" / \"Coffee Ingredients\": Whole Milk (1 Pack, matched: true, productId: 1), Sugar (1 Pack, matched: true, productId: 22), Coffee (1 Box, matched: false, productId: null, category: Beverages).\n";
             $prompt .= "    - \"Egg Fried Rice\": Large Eggs (1 Dozen, matched: true, productId: 2), White Rice (1 KG, matched: true, productId: 19), Cooking Oil (1 Liter, matched: true, productId: 21), Onions (1 KG, matched: true, productId: 11), Salt (1 Pack, matched: true, productId: 23), Soy Sauce (1 Bottle, matched: false, productId: null, category: Pantry), Garlic / Lahsan (1 Piece, matched: false, productId: null, category: Vegetables), White Pepper (1 Pack, matched: false, productId: null, category: Pantry).\n";
@@ -2693,7 +3850,7 @@ INSTRUCTIONS:
                 ]
             ];
 
-            $modelNames = ["gemini-2.5-flash"];
+            $modelNames = ["gemini-3.6-flash", "gemini-flash-latest"];
             $response = false;
             $httpCode = 0;
             $curlError = "";
@@ -3170,7 +4327,7 @@ INSTRUCTIONS:
                 "2. IF THE USER SPECIFICALLY ASKS ABOUT A PRODUCT OR ITEM PRICE (e.g., 'price of apples', 'cost of milk', 'do you have eggs'), YOU MUST IMMEDIATELY SEARCH THE INVENTORY ABOVE AND STATE ITS EXACT PRICE IN PKR, AVAILABILITY, AND CATEGORY CLEARLY.\n" .
                 "3. STRICT SCOPE: Only answer VoxCart website-related questions. If out of scope (general knowledge, coding, weather), politely decline in character.";
 
-            $apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $apiKey;
+            $apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" . $apiKey;
             $payload = [
                 "contents" => [
                     [
@@ -3230,8 +4387,8 @@ INSTRUCTIONS:
                 // 2b. View Recipe & Smart Recipe Search
                 else if (strpos($q, "biryani") !== false || strpos($q, "بریانی") !== false) {
                     $replyText = $isUr
-                        ? "🥘 **چکن بریانی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🌾 **سیلا / باسمتی چاول (White Rice):** 1 کلو\n- 🧅 **پیاز (Onions):** 1 کلو\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🥔 **آلو (Potatoes):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **بریانی مصالحہ اور ادرک لہسن پیسٹ:** درکار مصالحہ جات\n- 🥛 **دہی اور تازہ پودینہ:** اضافی ذائقہ\n\n💡 **طریقہ:** **Catalog** ٹیب میں جائیں اور سرچ میں 'Biryani' لکھیں تاکہ یہ تمام اجزاء ایک کلک میں کارٹ میں شامل کر سکیں!"
-                        : "🥘 **Chicken Biryani Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🌾 **White Rice:** 1 KG\n- 🧅 **Onions:** 1 KG\n- 🍅 **Tomatoes:** 1 KG\n- 🥔 **Potatoes:** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Biryani Masala & Ginger Garlic Paste:** Essential Spices\n- 🥛 **Yogurt & Fresh Mint:** For Garnishing\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Biryani' to add all these required ingredients to your cart in 1-click!";
+                        ? "🥘 **چکن بریانی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🌾 **سیلا / باسمتی چاول (White Rice):** 1 کلو\n- 🧅 **پیاز (Onions):** 250 گرام\n- 🍅 **ٹماٹر (Tomatoes):** 250 گرام\n- 🥔 **آلو (Potatoes):** 250 گرام\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 250 ملی لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **بریانی مصالحہ اور ادرک لہسن پیسٹ:** درکار مصالحہ جات\n- 🥛 **دہی اور تازہ پودینہ:** اضافی ذائقہ\n\n💡 **طریقہ:** **Catalog** ٹیب میں جائیں اور سرچ میں 'Biryani' لکھیں تاکہ یہ تمام اجزاء ایک کلک میں کارٹ میں شامل کر سکیں!"
+                        : "🥘 **Chicken Biryani Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🌾 **White Rice:** 1 KG\n- 🧅 **Onions:** 250 Grams\n- 🍅 **Tomatoes:** 250 Grams\n- 🥔 **Potatoes:** 250 Grams\n- 🛢️ **Cooking Oil:** 250 ML\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Biryani Masala & Ginger Garlic Paste:** Essential Spices\n- 🥛 **Yogurt & Fresh Mint:** For Garnishing\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Biryani' to add all these required ingredients to your cart in 1-click!";
                 }
                 else if (strpos($q, "karahi") !== false || strpos($q, "کڑاہی") !== false) {
                     $replyText = $isUr

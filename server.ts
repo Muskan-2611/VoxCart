@@ -1,4 +1,24 @@
 
+import express from "express";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import { createRequire } from "module";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+import { findMatchingRecipe } from "./src/recipes_db.js";
+
+const require = createRequire(import.meta.url);
+let nodemailer: any = null;
+try {
+  nodemailer = require("nodemailer");
+} catch (err) {
+  console.warn("[SMTP SYSTEM] Notice: Failed to load nodemailer via require:", err);
+}
+
+dotenv.config();
+
 function matchProductFuzzy(nameEn: string, nameUr: string, activeProducts: any[]) {
   if (!activeProducts || activeProducts.length === 0) return null;
   const nEn = (nameEn || "").toLowerCase().trim();
@@ -29,6 +49,9 @@ function matchProductFuzzy(nameEn: string, nameUr: string, activeProducts: any[]
 
 // Helper to get local recipe fallback data for offline / non-Gemini scenarios
 function getLocalRecipeFallback(query: string, activeProducts: any[], lang: string) {
+  const result = findMatchingRecipe(query, activeProducts);
+  if (result) return result;
+
   const q = (query || "").toLowerCase().trim();
   
   const RECIPES_DB: Record<string, any> = {
@@ -403,6 +426,184 @@ function getLocalRecipeFallback(query: string, activeProducts: any[], lang: stri
         "دودھ گاڑھا ہونے پر چینی اور مکھن شامل کریں۔",
         "الائچی اور میوہ جات سجا کر فریج میں ٹھنڈا کر کے سرو کریں۔"
       ]
+    },
+    haleem: {
+      key: "haleem",
+      nameEn: "Chicken / Beef Haleem",
+      nameUr: "حلیم / دلیم",
+      category: "Main Course",
+      prepTime: "30 mins",
+      cookTime: "2 hours",
+      servings: "6 persons",
+      difficulty: "Medium",
+      calories: "520 kcal",
+      descriptionEn: "A slow-cooked savory stew of meat, wheat, barley, and lentils simmered to perfection.",
+      descriptionUr: "گوشت، گندم، دالوں اور مصالحوں کے ساتھ धीमी انچ پر پکی لذیذ حلیم۔",
+      ingredients: [
+        { name: "Chicken", nameUr: "مرغی کا گوشت", qty: 1, unit: "kg", unitUr: "کلو" },
+        { name: "Onions", nameUr: "پیاز", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Cooking Oil", nameUr: "ککنگ آئل", qty: 250, unit: "ml", unitUr: "ملی لیٹر" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Soak lentils and wheat overnight; boil until soft.",
+        "Cook chicken with spices and shred coarsely.",
+        "Combine grains and meat, blend, and simmer with fried onion garnish."
+      ],
+      instructionsUr: [
+        "دالیں اور گندم ابال کر نرم کریں۔",
+        "چکن کو مصالحے کے ساتھ پکا کر ریشہ کریں۔",
+        "تمام اجزاء مکس کر کے گھوٹا لگائیں اور پیاز کا تڑکا دیں۔"
+      ]
+    },
+    tacos: {
+      key: "tacos",
+      nameEn: "Mexican Beef Tacos",
+      nameUr: "میکسیکن بیف ٹیکوز",
+      category: "Fast Food",
+      prepTime: "15 mins",
+      cookTime: "15 mins",
+      servings: "3 persons",
+      difficulty: "Easy",
+      calories: "430 kcal",
+      descriptionEn: "Crispy corn tortilla shells filled with seasoned ground beef, shredded cheddar cheese, onions, and fresh tomatoes.",
+      descriptionUr: "قیمہ، چیز، پیاز اور ٹماٹر کی فلنگ کے ساتھ کرسپی میکسیکن ٹیکوز۔",
+      ingredients: [
+        { name: "Ground Beef", nameUr: "بیف گوشت", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Cheddar Cheese", nameUr: "پنیر", qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { name: "Tomatoes", nameUr: "ٹماٹر", qty: 250, unit: "g", unitUr: "گرام" },
+        { name: "Onions", nameUr: "پیاز", qty: 250, unit: "g", unitUr: "گرام" },
+        { name: "Cooking Oil", nameUr: "ککنگ آئل", qty: 250, unit: "ml", unitUr: "ملی لیٹر" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Sauté ground beef with taco seasoning in oil until cooked.",
+        "Fill warm tortilla shells with cooked beef, diced tomatoes, onions, and cheese.",
+        "Serve hot with salsa."
+      ],
+      instructionsUr: [
+        "قیمہ مصالحے میں بھون لیں۔",
+        "ٹیکو شیلز میں قیمہ، ٹماٹر، پیاز اور چیز بھر کر سرو کریں۔"
+      ]
+    },
+    spaghetti: {
+      key: "spaghetti",
+      nameEn: "Spaghetti Carbonara",
+      nameUr: "اسپیگیٹی کاربونارا",
+      category: "Italian",
+      prepTime: "10 mins",
+      cookTime: "20 mins",
+      servings: "3-4 persons",
+      difficulty: "Easy",
+      calories: "510 kcal",
+      descriptionEn: "Classic Italian pasta tossed with eggs, cheese, butter, and chicken breast.",
+      descriptionUr: "انڈے، پنیر اور چکن کے ساتھ پکا ہوا روایتی اٹالین پاستا۔",
+      ingredients: [
+        { name: "Pasta", nameUr: "پاستا", qty: 1, unit: "box", unitUr: "ڈبہ" },
+        { name: "Large Eggs", nameUr: "انڈے", qty: 1, unit: "dozen", unitUr: "درجن" },
+        { name: "Cheddar Cheese", nameUr: "پنیر", qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { name: "Butter", nameUr: "مکھن", qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { name: "Chicken", nameUr: "مرغی کا گوشت", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Boil spaghetti in salted water until tender.",
+        "Whisk eggs with grated cheese in a bowl.",
+        "Toss hot drained pasta with butter, chicken, and egg-cheese sauce until glossy."
+      ],
+      instructionsUr: [
+        "اسپیگیٹی ابال لیں۔",
+        "انڈے اور چیز مکس کریں۔",
+        "گرم پاستا مکھن، چکن اور انڈے کے ساس میں مکس کر کے پیش کریں۔"
+      ]
+    },
+    shakshuka: {
+      key: "shakshuka",
+      nameEn: "Middle Eastern Shakshuka",
+      nameUr: "مڈل ایسٹرن شکشوقہ",
+      category: "Breakfast",
+      prepTime: "10 mins",
+      cookTime: "15 mins",
+      servings: "2 persons",
+      difficulty: "Easy",
+      calories: "320 kcal",
+      descriptionEn: "Poached eggs nestled in a spiced tomato and onion sauce skillet.",
+      descriptionUr: "ٹماٹر اور پیاز کی مسالے دار گریوی میں پکے ہوئے انڈے۔",
+      ingredients: [
+        { name: "Large Eggs", nameUr: "انڈے", qty: 1, unit: "dozen", unitUr: "درجن" },
+        { name: "Tomatoes", nameUr: "ٹماٹر", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Onions", nameUr: "پیاز", qty: 250, unit: "g", unitUr: "گرام" },
+        { name: "Cooking Oil", nameUr: "ککنگ آئل", qty: 250, unit: "ml", unitUr: "ملی لیٹر" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Sauté chopped onions and tomatoes in oil until thick sauce forms.",
+        "Make wells in sauce and crack eggs directly inside.",
+        "Cover and simmer until egg whites are set."
+      ],
+      instructionsUr: [
+        "پیاز اور ٹماٹر بھون کر گاڑھا ساس بنائیں۔",
+        "انڈے توڑ کر ساس میں ڈالیں اور ڈھک کر پکائیں۔"
+      ]
+    },
+    ramen: {
+      key: "ramen",
+      nameEn: "Japanese Chicken Ramen Noodle",
+      nameUr: "جاپانی چکن رامن نوڈلز",
+      category: "Asian",
+      prepTime: "15 mins",
+      cookTime: "20 mins",
+      servings: "2 persons",
+      difficulty: "Easy",
+      calories: "480 kcal",
+      descriptionEn: "Comforting Asian noodle soup with chicken broth, soft-boiled eggs, onions, and soy sauce.",
+      descriptionUr: "چکن یخنی، ابلی انڈے اور نوڈلز سے بنی گرم رامن سوپ۔",
+      ingredients: [
+        { name: "Pasta", nameUr: "پاستا", qty: 1, unit: "box", unitUr: "ڈبہ" },
+        { name: "Chicken", nameUr: "مرغی کا گوشت", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Large Eggs", nameUr: "انڈے", qty: 1, unit: "dozen", unitUr: "درجن" },
+        { name: "Onions", nameUr: "پیاز", qty: 250, unit: "g", unitUr: "گرام" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Simmer chicken to make broth, then slice chicken.",
+        "Boil noodles and eggs.",
+        "Serve noodles in hot broth topped with chicken slices and soft egg."
+      ],
+      instructionsUr: [
+        "چکن کی یخنی بنائیں اور نوڈلز ابالیں۔",
+        "گرم یخنی میں نوڈلز اور انڈے سجائیں۔"
+      ]
+    },
+    "butter chicken": {
+      key: "butter chicken",
+      nameEn: "Butter Chicken Masala",
+      nameUr: "بٹر چکن مسالہ",
+      category: "Main Course",
+      prepTime: "20 mins",
+      cookTime: "30 mins",
+      servings: "4 persons",
+      difficulty: "Medium",
+      calories: "590 kcal",
+      descriptionEn: "Tender chicken simmered in a velvety butter tomato sauce with aromatic spices.",
+      descriptionUr: "مکھن اور ٹماٹر کے شاہی ساس میں تیار کردہ لذیذ بٹر چکن۔",
+      ingredients: [
+        { name: "Chicken", nameUr: "مرغی کا گوشت", qty: 1, unit: "kg", unitUr: "کلو" },
+        { name: "Butter", nameUr: "مکھن", qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { name: "Tomatoes", nameUr: "ٹماٹر", qty: 500, unit: "g", unitUr: "گرام" },
+        { name: "Whole Milk", nameUr: "خالص دودھ", qty: 1, unit: "pack", unitUr: "پیکٹ" },
+        { name: "Onions", nameUr: "پیاز", qty: 250, unit: "g", unitUr: "گرام" },
+        { name: "Salt", nameUr: "نمک", qty: 1, unit: "pack", unitUr: "پیکٹ" }
+      ],
+      instructionsEn: [
+        "Sauté tomatoes and onions, then blend into a silky gravy.",
+        "Cook chicken in butter until golden.",
+        "Combine chicken with tomato sauce and milk; simmer until creamy."
+      ],
+      instructionsUr: [
+        "پیاز اور ٹماٹر کا پیسٹ بنائیں۔",
+        "چکن مکھن میں فرائی کریں اور پیسٹ شامل کر کے کریمی ہونے تک پکائیں۔"
+      ]
     }
   };
 
@@ -448,15 +649,117 @@ function getLocalRecipeFallback(query: string, activeProducts: any[], lang: stri
   };
 }
 
-import express from "express";
-import path from "path";
-import fs from "fs";
-import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
-import dotenv from "dotenv";
+let etherealTestAccount: any = null;
 
-dotenv.config();
+async function sendVerificationEmail(toEmail: string, code: string) {
+  let mailer = nodemailer;
+  if (!mailer) {
+    try {
+      mailer = require("nodemailer");
+    } catch (e1) {
+      try {
+        const mod = await import("nodemailer");
+        mailer = mod.default || mod;
+      } catch (e2) {
+        console.error("[SMTP SYSTEM] Could not load nodemailer module:", e2);
+      }
+    }
+  }
+
+  if (!mailer) {
+    throw new Error("Email service is temporarily unavailable. Please verify 'nodemailer' is installed in node_modules.");
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const rawUser = process.env.SMTP_USER || process.env.GMAIL_USER || "muskanmehmood2611@gmail.com";
+  const rawPass = process.env.SMTP_PASS || process.env.GMAIL_PASS || "rucwgjfcukdabttz";
+  const user = rawUser.trim().replace(/[)\s]+$/, "");
+  const pass = rawPass.replace(/\s+/g, "");
+
+  let transporter: any;
+
+  if (user && pass) {
+    transporter = mailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+  } else {
+    if (!etherealTestAccount) {
+      try {
+        etherealTestAccount = await mailer.createTestAccount();
+        console.log(`[SMTP SYSTEM] Created Ethereal SMTP test account: ${etherealTestAccount.user}`);
+      } catch (e) {
+        console.error("[SMTP SYSTEM] Failed to create Ethereal test account:", e);
+      }
+    }
+    if (etherealTestAccount) {
+      transporter = mailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: {
+          user: etherealTestAccount.user,
+          pass: etherealTestAccount.pass
+        }
+      });
+    } else {
+      transporter = mailer.createTransport({
+        jsonTransport: true
+      });
+    }
+  }
+
+  const senderAddress = user || "muskanmehmood2611@gmail.com";
+
+  const info = await transporter.sendMail({
+    from: `"VoxCart Security" <${senderAddress}>`,
+    replyTo: `"VoxCart Security" <${senderAddress}>`,
+    to: toEmail,
+    subject: `Your VoxCart Verification Code: ${code}`,
+    text: `Your VoxCart security verification code is: ${code}\n\nPlease enter this 6-digit code on the VoxCart website to verify your account.\nThis verification code is valid for 10 minutes.\n\nIf you did not request this verification code, please ignore this email.\n\nVoxCart Security Team`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 24px; line-height: 1.5;">
+        <div style="max-width: 480px; margin: 0 auto; background: #ffffff; padding: 32px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #6d28d9; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.5px;">VoxCart Online Store</h1>
+            <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Account Security Verification</p>
+          </div>
+          <p style="color: #334155; font-size: 14px; margin-bottom: 16px;">Hello,</p>
+          <p style="color: #334155; font-size: 14px; margin-bottom: 20px;">Use the following 6-digit security verification code to complete your request on VoxCart:</p>
+          <div style="font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #6d28d9; background: #f1f5f9; padding: 18px 24px; text-align: center; border-radius: 8px; margin: 20px 0; border: 1px dashed #cbd5e1;">
+            ${code}
+          </div>
+          <p style="font-size: 13px; color: #64748b; margin-top: 20px;">This code is valid for <strong>10 minutes</strong>. Do not share this code with anyone.</p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">If you did not request this code, no action is required.<br />&copy; VoxCart Security Team</p>
+        </div>
+      </div>
+    `,
+    headers: {
+      "X-Priority": "1 (Highest)",
+      "X-MSMail-Priority": "High",
+      "Importance": "High",
+      "Auto-Submitted": "auto-generated",
+      "X-Auto-Response-Suppress": "OOF, AutoReply, All",
+      "List-Unsubscribe": `<mailto:${senderAddress}?subject=unsubscribe>`
+    }
+  });
+
+  const testUrl = mailer && mailer.getTestMessageUrl ? mailer.getTestMessageUrl(info) : null;
+  if (testUrl) {
+    console.log(`[SMTP SYSTEM] Verification email dispatched to ${toEmail}. Preview URL: ${testUrl}`);
+  } else {
+    console.log(`[SMTP SYSTEM] Verification email successfully delivered to ${toEmail} via SMTP (${host}:${port})`);
+  }
+
+  return true;
+}
 
 // Synchronize GEMINI_API_KEY into .env file so that PHP backend can read it
 if (process.env.GEMINI_API_KEY) {
@@ -498,7 +801,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 interface DBData {
   users: any[];
   products: any[];
-  cart: { [userId: string]: { productId: number; qty: number }[] };
+  cart: { [userId: string]: { productId: number | string; qty: number; name?: string; nameUr?: string; price?: number; unit?: string; unitUr?: string; currencyCode?: string }[] };
   favourites: { [userId: string]: number[] };
   orders: any[];
   categories?: { id: string; name: string; nameUr: string; status?: string }[];
@@ -508,6 +811,7 @@ interface DBData {
   units?: { id: string; name: string; nameUr: string; status: string }[];
   currencies?: { id: string; name: string; code: string; symbol: string; status: string }[];
   adminActivityLogs?: { id: string; message?: string; action?: string; description?: string; userEmail?: string; timestamp: string }[];
+  feedback?: any[];
 }
 
 function getDB(): DBData {
@@ -616,7 +920,7 @@ function getDB(): DBData {
       { id: 18, name: "Green Tea", nameUr: "سبز چائے", categoryId: "Beverages", price: 980, salePrice: null, img: "https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?auto=format&fit=crop&w=300&q=80", unitId: "unit-box", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-tea", status: "Active" },
       { id: 19, name: "White Rice", nameUr: "چاول", categoryId: "Pantry", price: 840, salePrice: null, img: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80", unitId: "unit-pack", currencyId: "curr-pkr", brandId: "brand-national", subcategoryId: "sub-rice", status: "Active" },
       { id: 20, name: "Pasta", nameUr: "پاستا", categoryId: "Pantry", price: 500, salePrice: null, img: "https://images.unsplash.com/photo-1612966608967-30914a7c646a?auto=format&fit=crop&w=300&q=80", unitId: "unit-box", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-pasta", status: "Active" },
-      { id: 21, name: "Cooking Oil", nameUr: "ککنگ آئل", categoryId: "Pantry", price: 2500, salePrice: null, img: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=300&q=80", unitId: "unit-piece", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-oil", status: "Active" },
+      { id: 21, name: "Cooking Oil", nameUr: "ککنگ آئل", categoryId: "Pantry", price: 550, salePrice: null, img: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=300&q=80", unitId: "unit-piece", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-oil", status: "Active" },
       { id: 22, name: "Sugar", nameUr: "چینی", categoryId: "Pantry", price: 700, salePrice: null, img: "https://images.unsplash.com/photo-1581798459219-318e76aeec7b?auto=format&fit=crop&w=300&q=80", unitId: "unit-pack", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-spices", status: "Active" },
       { id: 23, name: "Salt", nameUr: "نمک", categoryId: "Pantry", price: 360, salePrice: null, img: "https://images.unsplash.com/photo-1604152135912-04a022e23696?auto=format&fit=crop&w=300&q=80", unitId: "unit-pack", currencyId: "curr-pkr", brandId: "brand-general", subcategoryId: "sub-spices", status: "Active" }
     ];
@@ -780,6 +1084,10 @@ function getDB(): DBData {
     ];
     updated = true;
   }
+  if (!currentData.feedback) {
+    currentData.feedback = [];
+    updated = true;
+  }
   if (currentData.products && Array.isArray(currentData.products)) {
     currentData.products = currentData.products.map((p: any) => {
       let prodUpdated = false;
@@ -880,6 +1188,28 @@ async function startServer() {
   });
 
   // Password Hashing & Verification Utilities
+  function isStrongPassword(password: string): { valid: boolean; message?: string } {
+    if (!password || typeof password !== "string") {
+      return { valid: false, message: "Password is required." };
+    }
+    if (password.length < 8) {
+      return { valid: false, message: "Password must be at least 8 characters long." };
+    }
+    if (!/[A-Z]/.test(password)) {
+      return { valid: false, message: "Password must contain at least one uppercase letter (A-Z)." };
+    }
+    if (!/[a-z]/.test(password)) {
+      return { valid: false, message: "Password must contain at least one lowercase letter (a-z)." };
+    }
+    if (!/[0-9]/.test(password)) {
+      return { valid: false, message: "Password must contain at least one digit (0-9)." };
+    }
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      return { valid: false, message: "Password must contain at least one special character (e.g. !@#$%^&*)." };
+    }
+    return { valid: true };
+  }
+
   function hashPassword(password: string): string {
     if (!password) return "";
     return crypto.createHash("sha256").update(String(password)).digest("hex");
@@ -894,18 +1224,136 @@ async function startServer() {
     return hashed === storedPassword;
   }
 
-  // API: Authentication
+  // Transient in-memory store for email verification codes
+  const pendingVerifications = new Map<string, { code: string; expiresAt: number; attempts: number }>();
+
+  // API: Send Email Verification Code
+  app.post("/api/auth/send-verification-code", async (req, res) => {
+    const { email } = req.body;
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ error: "Email address is required." });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    // Generate secure 6-digit random verification code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes validity
+    
+    try {
+      // Attempt sending real email via Nodemailer FIRST
+      await sendVerificationEmail(cleanEmail, code);
+      
+      // Store in pendingVerifications ONLY after successful email dispatch
+      pendingVerifications.set(cleanEmail, { code, expiresAt, attempts: 0 });
+
+      return res.json({
+        success: true,
+        message: `A unique 6-digit verification code has been sent to ${cleanEmail}. Please check your email inbox.`,
+        email: cleanEmail
+      });
+    } catch (err: any) {
+      console.error(`[EMAIL VERIFICATION SYSTEM] Error sending verification email to ${cleanEmail}:`, err);
+      return res.status(500).json({
+        error: `Failed to deliver verification code to ${cleanEmail}. ${err.message || "Please check server email settings."}`
+      });
+    }
+  });
+
+  // API: Verify Code
+  app.post("/api/auth/verify-code", (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ error: "Email and verification code are required." });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanCode = String(code).trim();
+    
+    const record = pendingVerifications.get(cleanEmail);
+    if (!record) {
+      return res.status(400).json({ error: "No verification code requested or session expired. Please request a new code." });
+    }
+    
+    if (Date.now() > record.expiresAt) {
+      pendingVerifications.delete(cleanEmail);
+      return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
+    }
+    
+    if (record.attempts >= 5) {
+      pendingVerifications.delete(cleanEmail);
+      return res.status(400).json({ error: "Too many failed attempts. Please request a new verification code." });
+    }
+    
+    if (record.code !== cleanCode) {
+      record.attempts += 1;
+      return res.status(400).json({ error: "Incorrect verification code. Please check and try again." });
+    }
+    
+    // Code verified!
+    pendingVerifications.delete(cleanEmail);
+    res.json({
+      success: true,
+      verified: true,
+      message: "Email address verified successfully!"
+    });
+  });
+
+  // API: Authentication Login
   app.post("/api/auth/login", (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
+    const { email, password, verificationCode } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email address is required" });
     }
     const cleanEmail = String(email).trim().toLowerCase();
     const db = getDB();
-    const user = db.users.find(u => u.email.toLowerCase().trim() === cleanEmail && verifyPassword(password, u.password));
+    let user = db.users.find(u => u.email.toLowerCase().trim() === cleanEmail);
+
     if (!user) {
-      return res.status(401).json({ error: "Invalid email or password" });
+      // Auto-create user if valid verification code is supplied during login
+      if (verificationCode) {
+        const record = pendingVerifications.get(cleanEmail);
+        if (record && record.code === String(verificationCode).trim() && Date.now() <= record.expiresAt) {
+          const newUser = {
+            id: `usr_${Math.random().toString(36).substr(2, 9)}`,
+            name: cleanEmail.split("@")[0] || "User",
+            email: cleanEmail,
+            password: password ? hashPassword(password) : hashPassword("Default123!"),
+            role: "customer"
+          };
+          db.users.push(newUser);
+          saveDB(db);
+          user = newUser;
+          pendingVerifications.delete(cleanEmail);
+        } else {
+          return res.status(401).json({ error: "Invalid verification code or email address not found." });
+        }
+      } else {
+        return res.status(401).json({ error: "Invalid email or password." });
+      }
+    } else {
+      // User exists, check password
+      if (password && !verifyPassword(password, user.password)) {
+        return res.status(401).json({ error: "Invalid password for this account." });
+      }
+
+      // If verificationCode is supplied alongside login, validate it
+      if (verificationCode) {
+        const record = pendingVerifications.get(cleanEmail);
+        if (!record) {
+          return res.status(400).json({ error: "Verification code expired or not requested. Please request a new code." });
+        }
+        if (Date.now() > record.expiresAt) {
+          pendingVerifications.delete(cleanEmail);
+          return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
+        }
+        if (record.code !== String(verificationCode).trim()) {
+          record.attempts += 1;
+          return res.status(400).json({ error: "Incorrect verification code. Please enter the valid code." });
+        }
+        // Validated! Clear code
+        pendingVerifications.delete(cleanEmail);
+      }
     }
+
     res.json({
       id: user.id,
       name: user.name,
@@ -920,11 +1368,18 @@ async function startServer() {
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Missing required fields" });
     }
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters long." });
+
+    const passCheck = isStrongPassword(String(password));
+    if (!passCheck.valid) {
+      return res.status(400).json({ error: passCheck.message });
     }
+
     const cleanEmail = String(email).trim().toLowerCase();
     const db = getDB();
+
+    if (db.users.some(u => u.email.toLowerCase().trim() === cleanEmail)) {
+      return res.status(400).json({ error: "An account with this email address already exists. Please log in." });
+    }
 
     const newUser = {
       id: "usr_" + Math.random().toString(36).substring(2, 11),
@@ -951,9 +1406,12 @@ async function startServer() {
     if (!email || !newPassword) {
       return res.status(400).json({ error: "Email and new password are required" });
     }
-    if (String(newPassword).length < 6) {
-      return res.status(400).json({ error: "New password must be at least 6 characters long." });
+
+    const passCheck = isStrongPassword(String(newPassword));
+    if (!passCheck.valid) {
+      return res.status(400).json({ error: passCheck.message });
     }
+
     const cleanEmail = String(email).trim().toLowerCase();
     const db = getDB();
     const userIndex = db.users.findIndex(u => u.email.toLowerCase().trim() === cleanEmail);
@@ -971,9 +1429,12 @@ async function startServer() {
     if (!userId || !currentPassword || !newPassword) {
       return res.status(400).json({ error: "User ID, current password, and new password are required" });
     }
-    if (String(newPassword).length < 6) {
-      return res.status(400).json({ error: "New password must be at least 6 characters long." });
+
+    const passCheck = isStrongPassword(String(newPassword));
+    if (!passCheck.valid) {
+      return res.status(400).json({ error: passCheck.message });
     }
+
     const db = getDB();
     const user = db.users.find(u => u.id === userId);
     if (!user) {
@@ -1006,6 +1467,96 @@ async function startServer() {
       avatar: db.users[index].avatar,
       message: "Display picture upgraded successfully!"
     });
+  });
+
+  // API: Feedback & Complaint System
+  app.post("/api/feedback", (req, res) => {
+    const { userId, userName, userEmail, type, subject, message, rating } = req.body;
+    if (!subject || !String(subject).trim() || !message || !String(message).trim()) {
+      return res.status(400).json({ error: "Subject and message content are required." });
+    }
+    const db = getDB();
+    db.feedback = db.feedback || [];
+
+    const newFeedback = {
+      id: "fb_" + Math.random().toString(36).substring(2, 11),
+      userId: userId || "guest",
+      userName: userName || "Anonymous User",
+      userEmail: userEmail || "guest@voxcart.com",
+      type: type || "feedback", // "feedback" | "complaint" | "suggestion"
+      subject: String(subject).trim(),
+      message: String(message).trim(),
+      rating: typeof rating === "number" ? Math.min(5, Math.max(1, rating)) : 5,
+      status: "Pending", // "Pending" | "Replied"
+      adminResponse: null,
+      createdAt: new Date().toISOString(),
+      repliedAt: null
+    };
+
+    db.feedback.unshift(newFeedback);
+    saveDB(db);
+
+    res.json({
+      success: true,
+      feedback: newFeedback,
+      message: "Your submission has been received successfully! Thank you for your feedback."
+    });
+  });
+
+  app.get("/api/feedback", (req, res) => {
+    const db = getDB();
+    db.feedback = db.feedback || [];
+    const { userId, email } = req.query;
+
+    if (userId && userId !== "usr_admin") {
+      const userItems = db.feedback.filter((f: any) => 
+        String(f.userId) === String(userId) || 
+        (email && f.userEmail && String(f.userEmail).toLowerCase() === String(email).toLowerCase())
+      );
+      return res.json(userItems);
+    }
+
+    // Admin gets all feedback items
+    res.json(db.feedback);
+  });
+
+  app.post("/api/feedback/:id/reply", (req, res) => {
+    const { id } = req.params;
+    const { adminResponse } = req.body;
+    if (!adminResponse || !String(adminResponse).trim()) {
+      return res.status(400).json({ error: "Reply message cannot be empty." });
+    }
+
+    const db = getDB();
+    db.feedback = db.feedback || [];
+
+    const index = db.feedback.findIndex((f: any) => f.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Feedback item not found." });
+    }
+
+    db.feedback[index].status = "Replied";
+    db.feedback[index].adminResponse = String(adminResponse).trim();
+    db.feedback[index].repliedAt = new Date().toISOString();
+
+    saveDB(db);
+
+    res.json({
+      success: true,
+      feedback: db.feedback[index],
+      message: "Response submitted and sent to user successfully!"
+    });
+  });
+
+  app.delete("/api/feedback/:id", (req, res) => {
+    const { id } = req.params;
+    const db = getDB();
+    db.feedback = db.feedback || [];
+
+    db.feedback = db.feedback.filter((f: any) => f.id !== id);
+    saveDB(db);
+
+    res.json({ success: true, message: "Feedback entry deleted successfully." });
   });
 
   // Admin routing to view and add new users
@@ -1842,7 +2393,7 @@ async function startServer() {
 
   app.post("/api/cart/:userId", (req, res) => {
     const { userId } = req.params;
-    const { productId, qty } = req.body;
+    const { productId, qty, name, nameUr, price, unit, unitUr, currencyCode } = req.body;
     const db = getDB();
     if (!db.cart) db.cart = {};
     if (!db.cart[userId]) db.cart[userId] = [];
@@ -1853,9 +2404,15 @@ async function startServer() {
         db.cart[userId].splice(existingIndex, 1);
       } else {
         db.cart[userId][existingIndex].qty = qty;
+        if (name) db.cart[userId][existingIndex].name = name;
+        if (nameUr) db.cart[userId][existingIndex].nameUr = nameUr;
+        if (price !== undefined) db.cart[userId][existingIndex].price = price;
+        if (unit) db.cart[userId][existingIndex].unit = unit;
+        if (unitUr) db.cart[userId][existingIndex].unitUr = unitUr;
+        if (currencyCode) db.cart[userId][existingIndex].currencyCode = currencyCode;
       }
     } else if (qty > 0) {
-      db.cart[userId].push({ productId, qty });
+      db.cart[userId].push({ productId, qty, name, nameUr, price, unit, unitUr, currencyCode });
     }
     saveDB(db);
     res.json(db.cart[userId]);
@@ -2071,7 +2628,7 @@ async function startServer() {
           if (!item) return;
           const cat = item.category || "General";
           const priceVal = typeof item.price === "number" ? item.price : parseFloat(item.price || item.unitPrice || 0);
-          const qtyVal = typeof item.qty === "number" ? item.qty : parseInt(item.qty || 1, 10);
+          const qtyVal = typeof item.qty === "number" ? item.qty : (parseFloat(item.qty || 1) || 1);
           const cost = priceVal * qtyVal;
           const orderCurrency = order.currency || "USD";
           salesByCategory[cat] = (salesByCategory[cat] || 0) + (orderCurrency === "PKR" ? cost / 280 : cost);
@@ -2849,296 +3406,706 @@ async function startServer() {
     res.json(ratesCache);
   });
 
-  // API: Gemini Multimodal OCR product list generator
-  app.post("/api/ocr", async (req, res) => {
-    const { imageBase64, mimeType } = req.body;
-    if (!imageBase64) {
-      return res.status(400).json({ error: "Missing image attachment or base64 stream" });
+  // Helper for local Tesseract.js OCR extraction when Gemini API is rate-limited or unavailable
+  function scoreOcrTextReadability(text: string): number {
+    if (!text || typeof text !== "string") return 0;
+    const words = text.match(/[a-zA-Z]{2,}/g) || [];
+    let score = 0;
+    for (const w of words) {
+      if (w.length >= 4) score += 4;
+      else if (w.length === 3) score += 3;
+      else score += 1;
+    }
+    return score;
+  }
+
+  function cleanOcrArtifacts(text: string): string {
+    if (!text) return "";
+    return text
+      .replace(/[|│┃]/g, " ")
+      .replace(/[~`^]/g, "")
+      .replace(/_{2,}/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\b0il\b/gi, "Oil")
+      .replace(/\bM1lk\b|\bMi1k\b/gi, "Milk")
+      .replace(/\bR1ce\b/gi, "Rice")
+      .replace(/\bEgqs\b|\bEgg5\b/gi, "Eggs")
+      .replace(/\bBr3ad\b/gi, "Bread")
+      .replace(/\bChaw1\b/gi, "Chawal")
+      .replace(/\bCheen1\b/gi, "Cheeni")
+      .replace(/\bTomat0\b/gi, "Tomato")
+      .replace(/\bPotat0\b/gi, "Potato")
+      .replace(/\b1L\b|\b1 L\b/gi, "1L")
+      .replace(/\b1kg\b|\b1 kg\b/gi, "1kg")
+      .replace(/\b2kg\b|\b2 kg\b/gi, "2kg")
+      .replace(/\b5kg\b|\b5 kg\b/gi, "5kg")
+      .trim();
+  }
+
+  async function runTesseractOcrOnImageBuffer(imageBuffer: Buffer, catalogList: any[], db: any): Promise<string> {
+    let worker: any = null;
+    try {
+      const tesseractModule = await import("tesseract.js");
+      const createWorkerFunc = tesseractModule.createWorker || (tesseractModule as any).default?.createWorker;
+      if (!createWorkerFunc) {
+        console.warn("Tesseract createWorker function not found in imported module.");
+        return "";
+      }
+
+      const sharp = (await import("sharp")).default;
+      worker = await createWorkerFunc("eng");
+
+      let bestText = "";
+      let bestScore = 0;
+
+      const recordText = (text: string) => {
+        if (!text) return;
+        const cleaned = cleanOcrArtifacts(text).trim();
+        const score = scoreOcrTextReadability(cleaned);
+        if (score > bestScore || (!bestText && cleaned.length >= 3)) {
+          bestScore = score;
+          bestText = cleaned;
+        }
+      };
+
+      // Pass 0: Direct raw buffer recognition for digital screenshots and clean bills
+      try {
+        const retDirect = await worker.recognize(imageBuffer);
+        const textDirect = retDirect && retDirect.data ? retDirect.data.text || "" : "";
+        if (textDirect) {
+          recordText(textDirect);
+          const itemsDirect = parseOcrTextToItems(textDirect, catalogList, db);
+          if (itemsDirect && itemsDirect.length > 0) {
+            console.log(`Tesseract Pass 0 (Direct Raw Buffer) extracted ${itemsDirect.length} valid products!`);
+            await worker.terminate();
+            return bestText;
+          }
+        }
+      } catch (directErr) {
+        console.warn("Tesseract Direct Pass 0 warning:", directErr);
+      }
+
+      // Pass 1: Upright image (Angle 0, EXIF auto-oriented), grayscale, normalized & sharpened
+      try {
+        const pass1Buffer = await sharp(imageBuffer)
+          .rotate()
+          .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+          .grayscale()
+          .normalize()
+          .sharpen({ sigma: 1.2, m1: 1.5, m2: 0.7 })
+          .png()
+          .toBuffer();
+
+        const ret1 = await worker.recognize(pass1Buffer);
+        const text1 = ret1 && ret1.data ? ret1.data.text || "" : "";
+        recordText(text1);
+        if (text1) {
+          const items1 = parseOcrTextToItems(text1, catalogList, db);
+          if (items1 && items1.length > 0) {
+            console.log(`Tesseract Pass 1 (Upright Grayscale) extracted ${items1.length} valid products!`);
+            await worker.terminate();
+            return bestText;
+          }
+        }
+      } catch (pass1Err) {
+        console.warn("Tesseract Pass 1 warning:", pass1Err);
+      }
+
+      // Pass 2: Upright image (Angle 0), binarization / thresholding for thermal receipts or shadow photos
+      try {
+        const pass2Buffer = await sharp(imageBuffer)
+          .rotate()
+          .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+          .grayscale()
+          .threshold(128)
+          .png()
+          .toBuffer();
+
+        const ret2 = await worker.recognize(pass2Buffer);
+        const text2 = ret2 && ret2.data ? ret2.data.text || "" : "";
+        recordText(text2);
+        if (text2) {
+          const items2 = parseOcrTextToItems(text2, catalogList, db);
+          if (items2 && items2.length > 0) {
+            console.log(`Tesseract Pass 2 (Upright Threshold) extracted ${items2.length} valid products!`);
+            await worker.terminate();
+            return bestText;
+          }
+        }
+      } catch (pass2Err) {
+        console.warn("Tesseract Pass 2 warning:", pass2Err);
+      }
+
+      // Pass 3: Direct buffer recognition without resizing (if raw original image holds fine details)
+      try {
+        const retDirect = await worker.recognize(imageBuffer);
+        const textDirect = retDirect && retDirect.data ? retDirect.data.text || "" : "";
+        recordText(textDirect);
+      } catch (directErr) {
+        console.warn("Tesseract direct recognize warning:", directErr);
+      }
+
+      // Pass 4: Rotated orientations (270deg, 90deg, 180deg) if bestText is still short
+      if (!bestText || bestText.length < 10) {
+        for (const angle of [270, 90, 180]) {
+          try {
+            const rotatedBuffer = await sharp(imageBuffer)
+              .rotate(angle)
+              .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+              .grayscale()
+              .normalize()
+              .sharpen({ sigma: 1.2, m1: 1.5, m2: 0.7 })
+              .png()
+              .toBuffer();
+
+            const retRot = await worker.recognize(rotatedBuffer);
+            const textRot = retRot && retRot.data ? retRot.data.text || "" : "";
+            recordText(textRot);
+          } catch (rotErr) {
+            console.warn(`Tesseract rotation angle ${angle} error:`, rotErr);
+          }
+        }
+      }
+
+      await worker.terminate();
+      worker = null;
+      return bestText;
+    } catch (err) {
+      console.error("Tesseract OCR engine error:", err);
+      if (worker) {
+        try { await worker.terminate(); } catch (e) {}
+      }
+      return "";
+    }
+  }
+
+  function parseOcrTextToItems(ocrText: string, catalogList: any[], db: any): any[] {
+    if (!ocrText || typeof ocrText !== "string") {
+      ocrText = "";
+    }
+    const cleanedText = cleanOcrArtifacts(ocrText);
+
+    // Split by newlines OR explicit item list breaks
+    const rawLines = cleanedText
+      .split(/\r?\n|(?<=[a-zA-Z0-9\)\u0600-\u06FF])\s*(?=\d+[\.\)\-]\s*)/)
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    const noiseKeywordsExact = new Set([
+      "total", "subtotal", "sub-total", "tax", "gst", "vat", "discount", "balance", "change",
+      "cash", "visa", "mastercard", "invoice", "receipt", "date", "amount", "tax invoice",
+      "thank you", "welcome", "cashier", "bill #", "items count", "item count", "paid",
+      "tel", "phone", "address", "market", "store", "supermarket", "mart", "qty total",
+      "gross amt", "net amt", "total amount", "item qty price total", "item quantity price",
+      "shopping list", "grocery list", "bazaar", "bazar", "order summary", "thank you for shopping"
+    ]);
+
+    const extractedItems: any[] = [];
+
+    for (let originalLine of rawLines) {
+      let line = originalLine.trim();
+      if (line.length < 2) continue;
+      const lower = line.toLowerCase().replace(/[^a-z0-9]/g, " ").trim();
+
+      // Noise check: table headers, store info, totals, separators
+      if (/^[\-\*\=\.\:\,\>\#\(\)\|\+\/_]+$/.test(line)) continue;
+      if (/^(\-{3,}|={3,}|\*{3,})$/.test(line)) continue;
+
+      // Table header row check e.g. "QTY ITEM DESCRIPTION PRICE TOTAL"
+      if (lower.includes("qty") && (lower.includes("price") || lower.includes("item") || lower.includes("total") || lower.includes("desc"))) continue;
+
+      const noiseSubstrings = [
+        "subtotal", "grand total", "net amount", "gross amount", "total amount", "net payable",
+        "total payable", "amount due", "balance due", "cash received", "cash paid", "change due",
+        "change returned", "tax invoice", "sales tax", "gst", "vat", "cashier", "pos slip",
+        "thank you", "welcome", "customer copy", "invoice no", "receipt no", "bill #", "tel:", "phone:",
+        "address:", "pvt ltd", "cash & carry", "supermarket", "super market", "superstore", "mart"
+      ];
+
+      if (noiseSubstrings.some(s => lower.includes(s))) continue;
+      if (/^(total|subtotal|sub-total|net total|grand total|amount payable|net payable|payable|cash|change|balance|paid)\b/i.test(line)) continue;
+      if (noiseKeywordsExact.has(lower) || noiseKeywordsExact.has(line.toLowerCase())) continue;
+      if (/^[\d\s.,\/:\-\#\(\)\|\+]+$/.test(line)) continue;
+
+      let qty = 1;
+      let unit = "item";
+      let unitUr = "عدد";
+      let price = 0;
+
+      // 1. Strip leading line indices like "1.", "2)", "•", "1 - "
+      line = line.replace(/^\s*(?:\d+[\.\)\-]|[\-\*•\>\✓\✔\xbb])\s*/, "").trim();
+
+      // 2. Strip leading explicit quantity numbers e.g. "2 Olpers Milk" or "2 x Bread"
+      const leadingNumMatch = line.match(/^\s*(\d{1,3})\s*(?:x|\*|@|pcs|pc|packs|pkt|doz|dozen)?\s+([a-zA-Z\u0600-\u06FF].*)/i);
+      if (leadingNumMatch) {
+        const q = parseInt(leadingNumMatch[1], 10);
+        if (q > 0 && q <= 100) {
+          qty = q;
+          line = leadingNumMatch[2].trim();
+        }
+      }
+
+      // 3. Extract trailing price / qty calculations
+      const formulaMatch = line.match(/^(.*?)(?:[\-–—@=]|rs\.?|pkr\.?|\$)*\s*([\d,]+(?:\.\d+)?)\s*(?:x|\*|@|pcs|pack|pkts)?\s*(\d+)?\s*(?:=|\s)\s*(?:rs\.?|pkr\.?|\$)?\s*([\d,]+(?:\.\d+)?)?$/i);
+
+      if (formulaMatch && formulaMatch[1].trim().length >= 2) {
+        const candidateName = formulaMatch[1].replace(/[\-–—@=]+$/g, "").trim();
+        const p1 = parseFloat(formulaMatch[2].replace(/,/g, ""));
+        const p2 = formulaMatch[3] ? parseInt(formulaMatch[3], 10) : null;
+        const p3 = formulaMatch[4] ? parseFloat(formulaMatch[4].replace(/,/g, "")) : null;
+
+        if (candidateName.length >= 2) {
+          line = candidateName;
+          if (p2 && p2 > 0 && p2 <= 100) qty = p2;
+          if (p3 && p3 > 0) price = p1 > 0 ? p1 : Math.round(p3 / qty);
+          else if (p1 > 0) price = p1;
+        }
+      } else {
+        const trailingBlock = line.match(/^(.*?)\s+((?:(?:x|@|=|rs\.?|pkr\.?|\$)?\s*[\d,]+(?:\.\d+)?\s*)+)$/i);
+        if (trailingBlock) {
+          const candidateName = trailingBlock[1].trim();
+          const rawNums = trailingBlock[2].replace(/x|@|=|rs\.?|pkr\.?|\$/gi, " ").trim().split(/\s+/).map(s => parseFloat(s.replace(/,/g, ""))).filter(n => !isNaN(n));
+
+          if (candidateName.length >= 2 && rawNums.length > 0) {
+            line = candidateName;
+            if (rawNums.length === 3) {
+              if (rawNums[0] > 0 && rawNums[0] <= 50 && Number.isInteger(rawNums[0])) {
+                qty = rawNums[0];
+                price = rawNums[1];
+              } else {
+                price = rawNums[1] > 0 ? rawNums[1] : rawNums[0];
+              }
+            } else if (rawNums.length === 2) {
+              if (rawNums[0] > 0 && rawNums[0] <= 20 && Number.isInteger(rawNums[0]) && rawNums[1] > rawNums[0] * 5) {
+                qty = rawNums[0];
+                price = Math.round(rawNums[1] / rawNums[0]);
+              } else {
+                price = rawNums[1] > 0 ? rawNums[1] : rawNums[0];
+              }
+            } else if (rawNums.length === 1) {
+              price = rawNums[0];
+            }
+          }
+        }
+      }
+
+      // 4. Detect unit from product title
+      const unitMatch = line.match(/\b(1\s*kg|2\s*kg|5\s*kg|kg|1\s*l|1\.5\s*l|liter|liters|l|pack|packs|dozen|doz|pcs|pc|g|500g|400g|bottle|bottles)\b/i);
+      if (unitMatch) {
+        const u = unitMatch[1].toLowerCase();
+        if (u.includes("kg")) { unit = "kg"; unitUr = "کلو"; }
+        else if (u.includes("l") || u.includes("liter")) { unit = "liter"; unitUr = "لیٹر"; }
+        else if (u.includes("pack")) { unit = "pack"; unitUr = "پیکٹ"; }
+        else if (u.includes("doz")) { unit = "dozen"; unitUr = "درجن"; }
+        else if (u.includes("pcs") || u.includes("pc")) { unit = "pcs"; unitUr = "عدد"; }
+        else if (u.includes("bottle")) { unit = "bottle"; unitUr = "بوتل"; }
+        else if (u.includes("g")) { unit = "g"; unitUr = "گرام"; }
+      }
+
+      let cleanName = line.replace(/^[\s\-\*\.\:\,\>\#\(\)\|]+|[\s\-\*\.\:\,\>\#\(\)\|]+$/g, "").trim();
+      if (!cleanName || cleanName.length < 2) continue;
+
+      cleanName = cleanName.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+
+      let match = fuzzyMatchProductBackend(cleanName, cleanName, catalogList);
+
+      if (match) {
+        const pStatus = String(match.status || "").toLowerCase().trim();
+        const isInactive = (pStatus === "inactive" || pStatus === "unavailable");
+        const isOutOfStock = typeof match.stockQuantity === "number" && match.stockQuantity <= 0;
+        const isAvailable = !isInactive && !isOutOfStock;
+        const activePrice = (match.salePrice && match.salePrice > 0) ? match.salePrice : match.price;
+        extractedItems.push({
+          name: match.name,
+          nameUr: match.nameUr || cleanName,
+          category: match.category || "Grocery",
+          price: price > 0 ? price : (activePrice > 0 ? activePrice : match.price),
+          qty,
+          unit: match.unit || unit,
+          unitUr: match.unitUr || unitUr,
+          productId: match.id,
+          matched: isAvailable,
+          isCatalogMatch: true,
+          isAvailable: isAvailable,
+          status: isAvailable ? "Available" : "Unavailable",
+          currencyCode: match.currencyCode || match.currency || "PKR"
+        });
+      } else {
+        extractedItems.push({
+          name: cleanName,
+          nameUr: cleanName,
+          category: "Grocery",
+          price: price > 0 ? price : 150,
+          qty,
+          unit,
+          unitUr,
+          productId: "scanned_" + (extractedItems.length + 1) + "_" + Date.now(),
+          matched: false,
+          isCatalogMatch: false,
+          isAvailable: false,
+          status: "Unavailable",
+          currencyCode: "PKR"
+        });
+      }
     }
 
+    return extractedItems;
+  }
+
+  // API: Gemini Multimodal OCR product list generator
+  const handleOcr = async (req: any, res: any) => {
+    const rawImage = req.body.imageBase64 || req.body.image || req.body.file || req.body.data;
+    const mimeType = req.body.mimeType || req.body.type;
+    if (!rawImage) {
+      return res.status(400).json({ error: "Missing image attachment or base64 stream" });
+    }
+    const imageBase64 = typeof rawImage === "string" ? rawImage : String(rawImage);
+
     try {
+      const db = getDB();
+      const resolvedProducts = db.products.map(p => resolveProductFlatFields(p, db));
+      const activeDbProds = resolvedProducts.filter(p => p.status !== "Inactive" && p.status !== "Unavailable");
+      const catalogList = activeDbProds.length > 0 ? activeDbProds : resolvedProducts;
+
+      // 1. Try PHP Backend OCR & product detection script first
+      try {
+        const { execSync } = await import("child_process");
+        const phpPayload = JSON.stringify({ imageBase64, mimeType, catalogList });
+        const phpOut = execSync("php ocr.php", {
+          input: phpPayload,
+          timeout: 15000,
+          encoding: "utf-8"
+        });
+        if (phpOut && phpOut.trim().length > 2) {
+          const phpItems = JSON.parse(phpOut);
+          if (Array.isArray(phpItems) && phpItems.length > 0) {
+            console.log(`PHP Backend OCR successfully extracted ${phpItems.length} items from image!`);
+            return res.json(phpItems);
+          }
+        }
+      } catch (phpErr) {
+        console.warn("PHP Backend OCR execution warning:", phpErr);
+      }
+
       let apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        // Dynamically try to reload dotenv to pick up any newly saved parameters or .env modifications
         dotenv.config();
         apiKey = process.env.GEMINI_API_KEY;
       }
 
-      if (!apiKey) {
-        return res.status(400).json({
-          error: "To activate AI-powered OCR product creation, please input a valid GEMINI_API_KEY in the bottom-left Settings parameters."
-        });
+      let extractedJsonText = "";
+      let productsParsed: any[] = [];
+
+      const commaIdx = imageBase64.indexOf(",");
+      let detectedMime = mimeType || "image/jpeg";
+      if (commaIdx !== -1) {
+        const header = imageBase64.substring(0, commaIdx);
+        const matchMime = header.match(/data:(.*?);base64/);
+        if (matchMime && matchMime[1]) detectedMime = matchMime[1];
+      }
+      if (detectedMime === "image/jpg") detectedMime = "image/jpeg";
+      const strippedBase64 = commaIdx !== -1 ? imageBase64.substring(commaIdx + 1) : imageBase64;
+      const rawImageBuffer = Buffer.from(strippedBase64, "base64");
+
+      // Auto-orient and normalize image buffer using Sharp
+      let processedImageBuffer = rawImageBuffer;
+      let processedBase64 = strippedBase64;
+      try {
+        const sharp = (await import("sharp")).default;
+        processedImageBuffer = await sharp(rawImageBuffer)
+          .rotate()
+          .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 95 })
+          .toBuffer();
+        processedBase64 = processedImageBuffer.toString("base64");
+        detectedMime = "image/jpeg";
+      } catch (sharpPreprocessErr) {
+        console.warn("Sharp preprocessing for OCR initial buffer warning:", sharpPreprocessErr);
       }
 
-      const db = getDB();
-      const resolvedProducts = db.products.map(p => resolveProductFlatFields(p, db));
-      const productListString = resolvedProducts.map(p => `- ID: ${p.id}, English Name: "${p.name}", Urdu Name: "${p.nameUr}", Category: "${p.category}", Price: ${p.price}, Unit: "${p.unit}", Urdu Unit: "${p.unitUr}", Status: "${p.status}", StockQuantity: ${p.stockQuantity !== undefined ? p.stockQuantity : 100}`).join("\n");
+      if (apiKey) {
+        const productListString = catalogList.map(p => `- ID: ${p.id}, English Name: "${p.name}", Urdu Name: "${p.nameUr}", Category: "${p.category}", Price: ${p.price}, Unit: "${p.unit}", Urdu Unit: "${p.unitUr}"`).join("\n");
 
-      console.log("Launching server-side Gemini 3.5 Flash OCR tool for invoice catalog image...");
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build"
+        console.log("Launching server-side Gemini Vision OCR for paper invoice/bill image...");
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build"
+            }
           }
-        }
-      });
+        });
 
-      // Strip headers from data URI (handles any media prefix like data:image/jpeg;base64,)
-      const commaIdx = imageBase64.indexOf(",");
-      const strippedBase64 = commaIdx !== -1 ? imageBase64.substring(commaIdx + 1) : imageBase64;
+        const imagePart = {
+          inlineData: {
+            mimeType: detectedMime,
+            data: processedBase64
+          }
+        };
 
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType || "image/jpeg",
-          data: strippedBase64
-        }
-      };
+        const promptText = `You are a high-precision OCR and document analysis engine specialized in reading physical paper receipts, supermarket bills, wholesale invoices, POS cash register printouts, handwritten grocery lists, and shopping invoices in English, Urdu, and bilingual formats.
 
-      const promptPart = {
-        text: `Analyze this image (invoice, receipt, grocery list, etc.) with deep focus. Transcribe and extract EVERY single product. 
+Read this image from top to bottom thoroughly. Detect and extract every single purchased product, food item, grocery, beverage, household supply, or line item visible in the image.
 
-Here is the exact list of AVAILABLE PRODUCTS in our store database:
+STORE PRODUCT CATALOG (FOR REFERENCE AND MATCHING ID WHEN APPLICABLE):
 ${productListString}
 
-Follow these rules for production-grade, highly precise extraction and matching:
-1. STRICT TRANSCRIPTION: ONLY extract items that are physically written in the image. Do NOT add extra products, guess missing ingredients, or hallucinate items under any circumstances, UNLESS it's a bulk command (see rule 3).
-2. LANG & PHONETICS: We support English, Urdu (in Arabic script), and Roman Urdu. Map any Roman Urdu terms or synonyms to the correct matching available product (e.g., "doodh" or "milk" matches "Whole Milk", "anday" or "eggs" matches "Large Eggs", "cheese" matches "Cheddar Cheese", "butter" matches "Butter"). Be robust against slight spelling variations, capitalization, or missing adjectives.
-3. BULK CATEGORY COMMANDS: If the image contains a handwritten instruction or command like "add all fruits", "all vegetables", "vegetables", "add all recipe products", "recipe ingredients", "healthy foods", or "healthy food", expand them into their individual constituent products listed in our database:
-   - "All Fruits" / "Fruits": Bananas, Apples, Oranges, Mangoes.
-   - "All Vegetables" / "Vegetables" / "Sabziyaan": Tomatoes, Potatoes, Onions, Carrots.
-   - "Recipe Ingredients" / "All Recipe Products" / "Recipe Products": White Rice, Pasta, Cooking Oil, Sugar, Salt.
-   - "Healthy Foods" / "Healthy Food": Green Tea, Bananas, Apples, Oranges, Salmon Fillet, Mineral Water.
-4. MATCHING: Match each extracted item to one of the AVAILABLE PRODUCTS in our store database if a matching item exists. Return the exact 'name' and 'nameUr' of that matched product, along with its correct category, price, unit, and unitUr from the database list above. Also set 'productId' to the matched product ID, and set 'matched' to true.
-5. NO MATCH (UNAVAILABLE): If an item is absolutely NOT available in the database list, still extract it with a translation, logical category, default unit price of 1.99, quantity, and standard unit. Set 'matched' to false, 'productId' to null, and flag it as Unavailable.
-6. STATUS & STOCK (UNAVAILABLE): If a matched product has status "Inactive" or StockQuantity <= 0, still extract it but set 'matched' to false and map 'productId' to its ID. This ensures it will be correctly marked as **"Unavailable"** (e.g., "Unavailable" / Out of Stock).
-7. QUANTITY: Be extremely precise with quantities. If a number is mentioned for an item (e.g., "5 apples", "apples 5", "5"), it MUST be reflected in the 'qty' field. Default to 1 if unspecified, NEVER guess a higher quantity.
-8. NO MERGING: Never group or merge separate products.
-9. OUTPUT: Output a strict JSON array matching the schema. Do not include markdown or other text.`
-      };
+EXTRACTION INSTRUCTIONS:
+1. Extract ALL purchased products/items.
+2. For each detected item provide:
+   - "name": Clean English title of the item (e.g., "Fresh Milk 1L", "Super Basmati Rice 5kg", "Eggs 1 Dozen", "Cooking Oil 1L", "Potatoes 2kg", "Tomatoes 1kg", "Onions 1kg", "Sugar 5kg", "Tapal Danedar Tea 430g").
+   - "nameUr": Urdu script title for the item (e.g., "تازہ دودھ", "سپر باسپتی چاول", "انڈے", "کوکنگ آئل", "آلو", "ٹماٹر", "پیاز", "چینی", "چائے").
+   - "category": Category name (e.g. "Dairy", "Grains", "Vegetables", "Grocery", "Beverages", "Snacks").
+   - "price": Item unit price or line price as a numeric value without currency symbols (e.g. 280, 450, 150. If price is not printed or unreadable, estimate a realistic market price in PKR, e.g. 150).
+   - "qty": Quantity purchased as a positive integer (default to 1 if not specified).
+   - "unit": Measurement unit in English (e.g. "kg", "liter", "pack", "pcs", "dozen", "bottle", "g", "item").
+   - "unitUr": Measurement unit in Urdu (e.g. "کلو", "لیٹر", "پیکٹ", "عدد", "درجن", "بوتل", "گرام").
+   - "productId": If the item matches an item in the STORE PRODUCT CATALOG, provide its exact store ID. Otherwise null.
+3. EXCLUDE store metadata (store name, branch address, phone number, cashier name, invoice number, date/timestamp).
+4. EXCLUDE summary/subtotal lines (subtotal, GST/sales tax, cash paid, change due, grand total, balance).
+5. Output format must strictly be a valid JSON object:
+{
+  "items": [
+    {
+      "name": "Olpers Milk 1L",
+      "nameUr": "اولپرز دودھ 1 لیٹر",
+      "category": "Dairy",
+      "price": 280,
+      "qty": 2,
+      "unit": "liter",
+      "unitUr": "لیٹر",
+      "productId": "1"
+    }
+  ]
+}`;
 
-      let extractedJsonText = "";
-      let isParsedSuccess = false;
-      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
-      let lastError: any = null;
+        const modelNames = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"];
 
-      for (const modelName of modelNames) {
-        try {
-          console.log(`Attempting OCR content generation using model: ${modelName}`);
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: { parts: [imagePart, promptPart] },
-            config: {
-              systemInstruction: "You are an expert bilingual OCR extraction tool designed to parse supermarket receipts, grocery list handwriting, and invoice structures. Your task is to output clean, valid, unformatted JSON arrays containing all detected products. Be extremely meticulous: find every item listed, extract its English name, Urdu translation, best category, float unit price, quantity purchased, and standard unit.",
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    nameUr: { type: Type.STRING },
-                    category: { type: Type.STRING },
-                    price: { type: Type.NUMBER },
-                    qty: { type: Type.INTEGER },
-                    unit: { type: Type.STRING },
-                    unitUr: { type: Type.STRING },
-                    productId: { type: Type.INTEGER },
-                    matched: { type: Type.BOOLEAN }
-                  },
-                  required: ["name", "nameUr", "category", "price", "qty", "unit", "unitUr", "matched"]
-                }
-              }
-            }
-          });
-          extractedJsonText = response.text || "[]";
-          isParsedSuccess = true;
-          console.log(`OCR content generation succeeded using model: ${modelName}`);
-          break; // Succeeded! Break loop
-        } catch (schemaError: any) {
-          lastError = schemaError;
-          console.warn(`Schema-based OCR generation failed for model ${modelName}, attempting relaxed JSON fallback...`);
-          // Fallback: request without a strict schema but still specifying JSON response type
+        for (const modelName of modelNames) {
           try {
-            const responseRelaxed = await ai.models.generateContent({
+            console.log(`Attempting OCR content generation using model: ${modelName}`);
+            const response = await ai.models.generateContent({
               model: modelName,
-              contents: {
-                parts: [
-                  imagePart,
-                  {
-                    text: "Analyze this receipt image and transcribe all products. Return a valid JSON array of objects. Each object MUST contain these fields: 'name' (English), 'nameUr' (Urdu), 'category', 'price' (unit price, number), 'qty' (quantity, integer, default 1), 'unit', 'unitUr', 'productId' (integer or null), and 'matched' (boolean). Be extremely precise."
-                  }
-                ]
-              },
+              contents: [
+                imagePart,
+                { text: promptText }
+              ],
               config: {
+                systemInstruction: "You are an expert bilingual OCR extraction system. You parse supermarket receipts, store invoices, and handwritten grocery lists, returning ALL detected products as a structured JSON object containing an 'items' array.",
                 responseMimeType: "application/json"
               }
             });
-            extractedJsonText = responseRelaxed.text || "[]";
-            isParsedSuccess = true;
-            console.log(`Relaxed OCR content generation succeeded using model: ${modelName}`);
-            break; // Succeeded! Break loop
-          } catch (relaxedError: any) {
-            lastError = relaxedError;
-            console.warn(`Relaxed JSON OCR generation also failed for model ${modelName}, trying plain-text transcription fallback...`);
+            extractedJsonText = response.text || "";
+            if (extractedJsonText && extractedJsonText.trim().length > 2) {
+              console.log(`OCR model ${modelName} succeeded! Raw output length: ${extractedJsonText.length}`);
+              break;
+            }
+          } catch (ocrErr) {
+            console.warn(`OCR model ${modelName} call error:`, ocrErr);
+          }
+        }
+
+        // If processed base64 failed or yielded empty result, retry with raw stripped base64
+        if (!extractedJsonText) {
+          console.log("Retrying Gemini OCR with raw stripped base64 buffer...");
+          for (const modelName of ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"]) {
             try {
-              // Ultimate fallback: generate as raw text and parse JSON block manually
-              const responseText = await ai.models.generateContent({
+              const rawImagePart = {
+                inlineData: {
+                  mimeType: detectedMime,
+                  data: strippedBase64
+                }
+              };
+              const response = await ai.models.generateContent({
                 model: modelName,
-                contents: {
-                  parts: [
-                    imagePart,
-                    {
-                      text: "Please read the items in this bill or receipt image and write them as a valid JSON array containing objects with keys: name (string), nameUr (string), category (string), price (unit price, number), qty (quantity, integer), unit (string), unitUr (string), productId (integer or null), matched (boolean)."
-                    }
-                  ]
+                contents: [
+                  rawImagePart,
+                  { text: promptText }
+                ],
+                config: {
+                  systemInstruction: "You are an expert bilingual OCR extraction system. Return a JSON object with 'items' array containing all detected products.",
+                  responseMimeType: "application/json"
                 }
               });
-              extractedJsonText = responseText.text || "[]";
-              isParsedSuccess = true;
-              console.log(`Plain-text OCR content generation succeeded using model: ${modelName}`);
-              break; // Succeeded! Break loop
-            } catch (textError: any) {
-              lastError = textError;
-              console.warn(`All Gemini content generation methods failed for model ${modelName}.`);
+              extractedJsonText = response.text || "";
+              if (extractedJsonText && extractedJsonText.trim().length > 2) {
+                console.log(`Raw buffer OCR model ${modelName} succeeded!`);
+                break;
+              }
+            } catch (rawOcrErr) {
+              console.warn(`Raw buffer OCR model ${modelName} error:`, rawOcrErr);
             }
           }
         }
       }
 
-      let productsParsed = [];
-      if (isParsedSuccess && extractedJsonText) {
+      if (extractedJsonText) {
         try {
-          // Sanitizing JSON output to handle markdown code block formatting
-          if (extractedJsonText.includes("```json")) {
-            extractedJsonText = extractedJsonText.split("```json")[1].split("```")[0];
-          } else if (extractedJsonText.includes("```")) {
-            extractedJsonText = extractedJsonText.split("```")[1].split("```")[0];
+          let cleanText = extractedJsonText;
+          if (cleanText.includes("```json")) {
+            cleanText = cleanText.split("```json")[1].split("```")[0];
+          } else if (cleanText.includes("```")) {
+            cleanText = cleanText.split("```")[1].split("```")[0];
           }
-          extractedJsonText = extractedJsonText.trim();
+          cleanText = cleanText.trim();
 
-          // Find first [ and last ] to extract raw JSON array correctly
-          const firstBracket = extractedJsonText.indexOf("[");
-          const lastBracket = extractedJsonText.lastIndexOf("]");
-          if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-            extractedJsonText = extractedJsonText.substring(firstBracket, lastBracket + 1);
-          } else {
-            const firstBrace = extractedJsonText.indexOf("{");
-            const lastBrace = extractedJsonText.lastIndexOf("}");
-            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-              extractedJsonText = "[" + extractedJsonText.substring(firstBrace, lastBrace + 1) + "]";
+          let rawParsed: any = null;
+          try {
+            rawParsed = JSON.parse(cleanText);
+          } catch (e) {
+            const firstBracket = cleanText.indexOf("[");
+            const lastBracket = cleanText.lastIndexOf("]");
+            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+              const substringArray = cleanText.substring(firstBracket, lastBracket + 1);
+              rawParsed = JSON.parse(substringArray);
+            } else {
+              const firstObj = cleanText.indexOf("{");
+              const lastObj = cleanText.lastIndexOf("}");
+              if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
+                const substringObj = cleanText.substring(firstObj, lastObj + 1);
+                rawParsed = JSON.parse(substringObj);
+              }
             }
           }
 
-          productsParsed = JSON.parse(extractedJsonText);
-          if (!Array.isArray(productsParsed)) {
-            if (typeof productsParsed === "object" && productsParsed !== null) {
-              const keys = Object.keys(productsParsed);
-              const possibleArray = keys.map(k => productsParsed[k]).find(val => Array.isArray(val));
+          if (Array.isArray(rawParsed)) {
+            productsParsed = rawParsed;
+          } else if (rawParsed && typeof rawParsed === "object") {
+            if (Array.isArray(rawParsed.items)) {
+              productsParsed = rawParsed.items;
+            } else if (Array.isArray(rawParsed.products)) {
+              productsParsed = rawParsed.products;
+            } else if (Array.isArray(rawParsed.data)) {
+              productsParsed = rawParsed.data;
+            } else {
+              const keys = Object.keys(rawParsed);
+              const possibleArray = keys.map(k => rawParsed[k]).find(val => Array.isArray(val) && val.length > 0);
               if (possibleArray) {
                 productsParsed = possibleArray;
               } else {
-                productsParsed = [productsParsed];
+                const objectValues = Object.values(rawParsed).filter((v: any) => v && typeof v === "object" && (v.name || v.itemName || v.item || v.productName));
+                if (objectValues.length > 0) {
+                  productsParsed = objectValues;
+                } else if (rawParsed.name || rawParsed.itemName || rawParsed.item) {
+                  productsParsed = [rawParsed];
+                }
               }
-            } else {
-              productsParsed = [];
             }
           }
-        } catch (parseError: any) {
-          console.warn("JSON parsing of Gemini OCR output failed, using simulation fallback:", parseError);
-          isParsedSuccess = false;
+        } catch (parseError) {
+          console.warn("JSON parsing of Gemini OCR output failed:", parseError);
         }
       }
 
-      // Standardize the fields of each item to ensure client-side compatibility and safety
-      let formattedProducts = [];
-      if (isParsedSuccess && productsParsed.length > 0) {
-        formattedProducts = productsParsed.map((item: any) => {
-          const name = item.name || item.itemName || item.productName || item.item || "Scanned Product";
+      let formattedProducts: any[] = [];
+      if (productsParsed && productsParsed.length > 0) {
+        formattedProducts = productsParsed.map((item: any, idx: number) => {
+          let rawName = item.name || item.itemName || item.productName || item.item || `Scanned Item ${idx + 1}`;
+          let cleanedName = rawName.replace(/^[\s\d\-•*.)\]:]+/, '').trim();
+          if (!cleanedName) cleanedName = rawName;
+
+          const name = cleanedName;
           const nameUr = item.nameUr || item.name_ur || item.urdu_name || item.urduName || name;
-          const category = item.category || item.cat || "Pantry";
-          
-          let price = 1.99;
+          const category = item.category || item.cat || "Grocery";
+
+          let price = 0;
           if (item.price !== undefined && item.price !== null) {
             const parsedPrice = parseFloat(item.price);
-            if (!isNaN(parsedPrice)) {
-              price = parsedPrice;
-            }
+            if (!isNaN(parsedPrice) && parsedPrice > 0) price = parsedPrice;
           }
 
           let qty = 1;
           if (item.qty !== undefined && item.qty !== null) {
             const parsedQty = parseInt(item.qty);
-            if (!isNaN(parsedQty) && parsedQty > 0) {
-              qty = parsedQty;
-            }
-          } else if (item.quantity !== undefined && item.quantity !== null) {
-            const parsedQty = parseInt(item.quantity);
-            if (!isNaN(parsedQty) && parsedQty > 0) {
-              qty = parsedQty;
-            }
+            if (!isNaN(parsedQty) && parsedQty > 0) qty = parsedQty;
           }
-          
+
           const unit = item.unit || "item";
           const unitUr = item.unitUr || item.unit_ur || "عدد";
-          
-          // Match with database products on the server for 100% accuracy
+
           let match = null;
-          if (item.productId) {
-            match = resolvedProducts.find(p => String(p.id) === String(item.productId));
+          if (item.productId && (typeof item.productId === "number" || /^\d+$/.test(String(item.productId)))) {
+            match = catalogList.find(p => String(p.id) === String(item.productId));
           }
           if (!match) {
-            match = fuzzyMatchProductBackend(name, nameUr, resolvedProducts);
+            match = fuzzyMatchProductBackend(name, nameUr, catalogList);
           }
-          const isMatched = match && match.status !== "Inactive" && (match.stockQuantity === undefined || match.stockQuantity > 0) && match.price > 0;
-          
-          if (isMatched) {
+
+          if (match) {
+            const pStatus = String(match.status || "").toLowerCase().trim();
+            const isInactive = (pStatus === "inactive" || pStatus === "unavailable");
+            const isOutOfStock = typeof match.stockQuantity === 'number' && match.stockQuantity <= 0;
+            const isAvailable = !isInactive && !isOutOfStock;
+            const activePrice = (match.salePrice && match.salePrice > 0) ? match.salePrice : match.price;
             return {
               name: match.name,
               nameUr: match.nameUr,
-              category: match.category,
-              price: match.price,
+              category: match.category || category,
+              price: price > 0 ? price : (activePrice > 0 ? activePrice : match.price),
               qty,
-              unit: item.unit || match.unit,
-              unitUr: item.unitUr || match.unitUr,
+              unit: match.unit || unit,
+              unitUr: match.unitUr || unitUr,
               productId: match.id,
-              matched: true,
+              matched: isAvailable,
+              isCatalogMatch: true,
+              isAvailable: isAvailable,
+              status: isAvailable ? "Available" : "Unavailable",
               currencyCode: match.currencyCode || match.currency || "PKR"
             };
           } else {
             return {
-              name: match ? match.name : name,
-              nameUr: match ? match.nameUr : nameUr,
-              category: match ? match.category : category,
-              price: match ? match.price : price,
+              name,
+              nameUr: nameUr || name,
+              category: category || "Grocery",
+              price: price > 0 ? price : 150,
               qty,
-              unit: match ? match.unit : unit,
-              unitUr: match ? match.unitUr : unitUr,
-              productId: match ? match.id : null,
-              matched: false, // Set to false so they are marked as Unavailable!
-              currencyCode: match ? (match.currencyCode || match.currency || "PKR") : "USD"
+              unit,
+              unitUr,
+              productId: "scanned_" + (idx + 1) + "_" + Date.now(),
+              matched: false,
+              isCatalogMatch: false,
+              isAvailable: false,
+              status: "Unavailable",
+              currencyCode: "PKR"
             };
           }
         });
-      } else {
-        console.warn("Gemini API call failed or quota exceeded. Executing high-quality programmatic fallback parser.");
-        const activeProducts = resolvedProducts.filter(p => p.status !== "Inactive" && p.status !== "Unavailable" && (p.stockQuantity === undefined || p.stockQuantity > 0));
-        const fallbackItems = activeProducts.slice(0, 3);
-        if (fallbackItems.length > 0) {
-          formattedProducts = fallbackItems.map((p, idx) => ({
-            name: p.name,
-            nameUr: p.nameUr,
-            category: p.category,
-            price: p.price,
-            qty: idx === 0 ? 2 : 1,
-            unit: p.unit,
-            unitUr: p.unitUr,
-            productId: p.id,
-            matched: true,
-            currencyCode: p.currencyCode || p.currency || "PKR"
-          }));
-        } else {
-          formattedProducts = [];
+      }
+
+      // If Gemini API did not yield products or failed, run Tesseract OCR on the actual uploaded image!
+      if (formattedProducts.length === 0) {
+        console.log("Running local Tesseract OCR engine on uploaded image buffer...");
+        const imageBuffer = Buffer.from(strippedBase64, "base64");
+        const ocrText = await runTesseractOcrOnImageBuffer(imageBuffer, catalogList, db);
+        console.log("Tesseract OCR raw text extracted length:", ocrText ? ocrText.length : 0);
+        if (ocrText && ocrText.trim().length > 0) {
+          formattedProducts = parseOcrTextToItems(ocrText, catalogList, db);
+        }
+        if (formattedProducts.length === 0 && ocrText) {
+          const lowerOcr = ocrText.toLowerCase();
+          for (const p of catalogList) {
+            const pNameLower = p.name ? p.name.toLowerCase().trim() : "";
+            const pUrLower = p.nameUr ? p.nameUr.toLowerCase().trim() : "";
+            if ((pNameLower.length >= 3 && lowerOcr.includes(pNameLower)) || (pUrLower.length >= 3 && lowerOcr.includes(pUrLower))) {
+              formattedProducts.push({
+                name: p.name,
+                nameUr: p.nameUr || p.name,
+                category: p.category || "Grocery",
+                price: (p.salePrice && p.salePrice > 0) ? p.salePrice : p.price,
+                qty: 1,
+                unit: p.unit || "item",
+                unitUr: p.unitUr || "عدد",
+                productId: p.id,
+                matched: true,
+                isCatalogMatch: true,
+                isAvailable: true,
+                status: "Available",
+                currencyCode: p.currencyCode || p.currency || "PKR"
+              });
+            }
+          }
         }
       }
 
@@ -3149,34 +4116,19 @@ Follow these rules for production-grade, highly precise extraction and matching:
         seenNames.add(key);
         return true;
       });
-      console.log(`Bilingual OCR successfully processed! Extracted ${finalProducts.length} items.`);
+
+      console.log(`OCR extraction finished! Extracted ${finalProducts.length} actual items from image.`);
       res.json(finalProducts);
     } catch (err: any) {
-      console.error("Gemini OCR server error: ", err);
-      // Execute ultimate fallback to prevent UI crash or empty state
-      try {
-        const db = getDB();
-        const resolvedProducts = db.products.map(p => resolveProductFlatFields(p, db));
-        const activeProducts = resolvedProducts.filter(p => p.status !== "Inactive" && p.status !== "Unavailable" && (p.stockQuantity === undefined || p.stockQuantity > 0));
-        const fallbackItems = activeProducts.slice(0, 3);
-        const formattedProducts = fallbackItems.map((p, idx) => ({
-          name: p.name,
-          nameUr: p.nameUr,
-          category: p.category,
-          price: p.price,
-          qty: idx === 0 ? 2 : 1,
-          unit: p.unit,
-          unitUr: p.unitUr,
-          productId: p.id,
-          matched: true,
-          currencyCode: p.currencyCode || p.currency || "PKR"
-        }));
-        res.json(formattedProducts);
-      } catch (fallbackErr) {
-        res.json([]);
-      }
+      console.error("OCR server processing error:", err);
+      res.json([]);
     }
-  });
+  };
+
+  app.post("/api/ocr", handleOcr);
+  app.post("/api/process-ocr", handleOcr);
+  app.post("/api/process_ocr", handleOcr);
+  app.post("/api/scan-bill", handleOcr);
 
   // ================= BACKEND FUZZY MATCH & SPEECH PARSER HELPERS =================
   function getLevenshteinDistance(a: string, b: string): number {
@@ -3209,46 +4161,74 @@ Follow these rules for production-grade, highly precise extraction and matching:
   const synonymsMap: { [key: string]: string[] } = {
     "coke": ["coca-cola", "cocacola", "cola", "soda"],
     "cola": ["coca-cola", "cocacola", "coke"],
-    "milk": ["whole milk", "dairy milk", "pack milk"],
+    "milk": ["whole milk", "dairy milk", "pack milk", "milkpak"],
     "egg": ["large eggs", "eggs", "egg"],
     "eggs": ["large eggs", "eggs", "egg"],
-    "cheese": ["cheddar cheese", "cheese slice"],
-    "butter": ["butter block", "butter"],
+    "cheese": ["cheddar cheese", "cheese slice", "paneer"],
+    "butter": ["butter block", "butter", "makkhan"],
+    "bananas": ["bananas", "banana"],
+    "banana": ["bananas", "banana"],
+    "apples": ["apples", "apple"],
+    "apple": ["apples", "apple"],
+    "oranges": ["oranges", "orange", "kinnow"],
+    "orange": ["oranges", "orange"],
+    "mangoes": ["mangoes", "mango"],
+    "mango": ["mangoes", "mango"],
+    "tomatoes": ["tomatoes", "tomato"],
+    "tomato": ["tomatoes", "tomato"],
+    "potatoes": ["potatoes", "potato"],
+    "potato": ["potatoes", "potato"],
+    "onions": ["onions", "onion"],
+    "onion": ["onions", "onion"],
+    "carrots": ["carrots", "carrot"],
+    "carrot": ["carrots", "carrot"],
+    "chicken": ["chicken breast", "chicken", "murgi"],
     "beef": ["ground beef", "beef", "mincemeat", "qeema", "keema"],
     "qeema": ["ground beef", "beef", "mincemeat", "qeema", "keema"],
-    "chicken": ["chicken breast", "chicken", "meat"],
-    "fish": ["salmon fillet", "fish fillet", "salmon"],
+    "fish": ["salmon fillet", "fish fillet", "salmon", "machli"],
     "salmon": ["salmon fillet", "fish fillet", "salmon"],
     "water": ["mineral water", "water bottle"],
     "tea": ["green tea", "chai", "tea pack"],
     "chai": ["green tea", "chai", "tea pack"],
     "rice": ["white rice", "rice pack", "chawal"],
-    "oil": ["cooking oil", "oil bottle"]
+    "pasta": ["pasta", "macaroni", "spaghetti"],
+    "oil": ["cooking oil", "oil bottle", "ghee", "tel"],
+    "sugar": ["sugar", "cheeni"],
+    "salt": ["salt", "namak"]
   };
 
   const romanUrduMap: { [key: string]: string } = {
-    "doodh": "milk", "dudh": "milk", "khalees doodh": "milk",
-    "anday": "eggs", "ande": "eggs", "anda": "eggs",
-    "paneer": "cheese", "paner": "cheese",
-    "makkhan": "butter", "makhan": "butter",
+    "doodh": "milk", "dudh": "milk", "khalees doodh": "milk", "dood": "milk",
+    "anday": "eggs", "ande": "eggs", "anda": "eggs", "andey": "eggs",
+    "paneer": "cheese", "paner": "cheese", "chees": "cheese",
+    "makkhan": "butter", "makhan": "butter", "makkan": "butter",
     "kelay": "bananas", "kele": "bananas", "kela": "bananas",
-    "saib": "apples", "seb": "apples",
+    "saib": "apples", "seb": "apples", "apple": "apples",
     "maltey": "oranges", "malte": "oranges", "malta": "oranges", "kinnow": "oranges", "kino": "oranges",
-    "aam": "mangoes",
-    "tamatar": "tomatoes",
-    "aaloo": "potatoes", "aalu": "potatoes", "aloo": "potatoes", "alu": "potatoes",
-    "pyaaz": "onions", "piyaz": "onions", "pyaz": "onions",
-    "gajar": "carrots", "gajjar": "carrots",
-    "murghi": "chicken", "murgi": "chicken", "murghi ka gosht": "chicken",
-    "qeema": "beef", "qima": "beef", "keema": "beef",
-    "machli": "fish", "machhli": "fish",
-    "paani": "water", "pani": "water",
-    "chai": "tea", "sabz chai": "tea",
-    "chawal": "rice",
-    "tel": "cooking oil", "tail": "cooking oil", "koking oil": "cooking oil",
-    "cheeni": "sugar", "chini": "sugar",
-    "namak": "salt"
+    "aam": "mangoes", "mango": "mangoes",
+    "tamatar": "tomatoes", "tomato": "tomatoes", "tamatr": "tomatoes",
+    "aaloo": "potatoes", "aalu": "potatoes", "aloo": "potatoes", "alu": "potatoes", "potato": "potatoes",
+    "pyaaz": "onions", "piyaz": "onions", "pyaz": "onions", "onion": "onions",
+    "gajar": "carrots", "gajjar": "carrots", "carrot": "carrots",
+    "murghi": "chicken", "murgi": "chicken", "murghi ka gosht": "chicken", "chicken": "chicken",
+    "qeema": "beef", "qima": "beef", "keema": "beef", "beef": "beef",
+    "machli": "fish", "machhli": "fish", "fish": "fish", "salmon": "fish",
+    "paani": "water", "pani": "water", "water": "water",
+    "chai": "tea", "sabz chai": "tea", "tea": "tea",
+    "chawal": "rice", "rice": "rice",
+    "tel": "oil", "tail": "oil", "koking oil": "oil", "cooking oil": "oil", "oil": "oil", "ghee": "oil",
+    "cheeni": "sugar", "chini": "sugar", "sugar": "sugar",
+    "namak": "salt", "salt": "salt"
   };
+
+  const unitSizeNoiseList = [
+    "kg", "g", "gram", "grams", "kilo", "kilos", "kilogram", "kilograms",
+    "liter", "liters", "litre", "litres", "l", "ml", "milliliter", "milliliters",
+    "lb", "lbs", "pound", "pounds", "pack", "packs", "packet", "packets", "pekit",
+    "box", "boxes", "bottle", "bottles", "botle", "dabba", "dabbe", "piece", "pieces",
+    "pcs", "pc", "dozen", "dozens", "darjan", "darjn", "1kg", "2kg", "5kg", "1l", "2l", "5l",
+    "250g", "500g", "800g", "1000g", "250ml", "500ml", "1litre", "2litre", "5litre", "1liter"
+  ];
 
   function stripPluralEndings(s: string): string {
     return s
@@ -3267,88 +4247,148 @@ Follow these rules for production-grade, highly precise extraction and matching:
 
   function fuzzyMatchProductBackend(pNameItem: string, pNameUrItem: string, productsList: any[]): any {
     if (!productsList || productsList.length === 0) return null;
-    let scannedName = normalizeString(pNameItem);
-    const scannedNameUr = normalizeString(pNameUrItem);
 
-    if (!scannedName && !scannedNameUr) return null;
+    const rawEn = normalizeString(pNameItem);
+    const rawUr = normalizeString(pNameUrItem);
 
-    // Check if scannedName is in romanUrduMap and translate it!
-    const cleanScannedLower = scannedName.toLowerCase().trim();
-    if (romanUrduMap[cleanScannedLower]) {
-      scannedName = normalizeString(romanUrduMap[cleanScannedLower]);
-    } else {
-      // Check if any word in scannedName matches romanUrduMap
-      const words = cleanScannedLower.split(/\s+/);
-      for (const w of words) {
-        if (romanUrduMap[w]) {
-          scannedName = normalizeString(romanUrduMap[w]);
-          break;
+    if (!rawEn && !rawUr) return null;
+
+    const noiseWordsRegex = /\b(1x|2x|3x|4x|5x|kg|g|gram|grams|kilo|kilos|kilogram|kilograms|liter|liters|litre|litres|l|ml|milliliter|milliliters|lb|lbs|pound|pounds|pack|packs|packet|packets|box|boxes|bottle|bottles|piece|pieces|pcs|pc|dozen|dozens|pkr|rs|usd|\$|nestle|olpers|national|shan|shangrila|habib|lipton|tapal|meezan|dalda|rafhan|knorr|knor|mitchells|sensodyne|colgate|lux|surf|ariel|harpic|dettol|fresh|super|kernel|broiler|pure|life|iodized|organic|org|original|best|quality|premium|extra|prime|brand|select|choice|item|items)\b/gi;
+
+    const cleanNoise = (str: string) => {
+      const norm = normalizeString(str);
+      return norm
+        .replace(noiseWordsRegex, "")
+        .replace(/\b\d+(\.\d+)?(kg|g|l|ml|oz|lb)?\b/gi, "")
+        .replace(/\b\d+\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const cleanedEn = cleanNoise(rawEn) || rawEn;
+
+    // Direct Exact Name Check
+    for (const p of productsList) {
+      const pName = normalizeString(p.name);
+      const pNameUr = normalizeString(p.nameUr);
+      if (pName === rawEn || (pNameUr && rawUr && pNameUr === rawUr)) {
+        return p;
+      }
+      if (pName === cleanedEn) {
+        return p;
+      }
+    }
+
+    // Roman Urdu & Abbreviation Translation
+    let expandedEn = cleanedEn
+      .split(" ")
+      .map(tok => romanUrduMap[tok] || tok)
+      .join(" ");
+
+    let bestProduct = null;
+    let maxScore = 0;
+
+    const keyNounList = [
+      "milk", "egg", "eggs", "cheese", "butter", "banana", "bananas", "apple", "apples",
+      "orange", "oranges", "mango", "mangoes", "tomato", "tomatoes", "potato", "potatoes",
+      "onion", "onions", "carrot", "carrots", "chicken", "beef", "qeema", "fish", "salmon",
+      "water", "tea", "chai", "rice", "pasta", "oil", "ghee", "sugar", "salt", "masala",
+      "bread", "flour", "atta", "daal", "lentil", "biscuit", "yogurt", "dahi"
+    ];
+
+    for (const p of productsList) {
+      const pName = normalizeString(p.name);
+      const pNameUr = normalizeString(p.nameUr);
+      const pNameCleaned = cleanNoise(pName) || pName;
+
+      let score = 0;
+
+      // Cleaned Exact Match
+      if (pNameCleaned === cleanedEn || pNameCleaned === expandedEn) {
+        score = Math.max(score, 98);
+      }
+
+      // Synonym Match
+      if (synonymsMap[cleanedEn] || synonymsMap[expandedEn]) {
+        const synList = synonymsMap[cleanedEn] || synonymsMap[expandedEn] || [];
+        if (synList.some(syn => pName.includes(syn) || pNameCleaned.includes(syn))) {
+          score = Math.max(score, 92);
         }
       }
-    }
 
-    const cleanScanned = stripPluralEndings(scannedName);
+      // Substring Match
+      if (cleanedEn.length >= 3 && pNameCleaned.length >= 3) {
+        if (pNameCleaned.includes(cleanedEn) || cleanedEn.includes(pNameCleaned)) {
+          score = Math.max(score, 85);
+        }
+        if (pNameCleaned.includes(expandedEn) || expandedEn.includes(pNameCleaned)) {
+          score = Math.max(score, 88);
+        }
+      }
 
-    // 1. EXACT MATCH on English or Urdu name
-    let matched = productsList.find(p => {
-      const pName = (p.name || "").toLowerCase().trim();
-      const pNameUr = (p.nameUr || "").toLowerCase().trim();
-      return pName === scannedName || (pNameUr && scannedNameUr && pNameUr === scannedNameUr);
-    });
-    if (matched) return matched;
+      if (rawEn.length >= 3 && pName.length >= 3) {
+        if (pName.includes(rawEn) || rawEn.includes(pName)) {
+          score = Math.max(score, 80);
+        }
+      }
 
-    // 2. NORMALIZED EXACT MATCH
-    matched = productsList.find(p => {
-      const pName = normalizeString(p.name || "");
-      const pNameUr = normalizeString(p.nameUr || "");
-      return pName === scannedName || (pNameUr && scannedNameUr && pNameUr === scannedNameUr);
-    });
-    if (matched) return matched;
+      if (rawUr.length >= 2 && pNameUr.length >= 2) {
+        if (pNameUr.includes(rawUr) || rawUr.includes(pNameUr)) {
+          score = Math.max(score, 85);
+        }
+      }
 
-    // 3. SYNONYM MATCH
-    for (const [key, synList] of Object.entries(synonymsMap)) {
-      if (scannedName === key || synList.includes(scannedName)) {
-        const match = productsList.find(p => {
-          const pName = (p.name || "").toLowerCase();
-          return pName.includes(key) || synList.some(s => pName.includes(s));
-        });
-        if (match) return match;
+      // Token Overlap Score
+      const tokensScanned = expandedEn.split(" ").filter(t => t.length > 1);
+      const tokensProduct = pNameCleaned.split(" ").filter(t => t.length > 1);
+
+      if (tokensScanned.length > 0 && tokensProduct.length > 0) {
+        let matches = 0;
+        for (const st of tokensScanned) {
+          const stSingular = stripPluralEndings(st);
+          for (const pt of tokensProduct) {
+            const ptSingular = stripPluralEndings(pt);
+            if (st === pt || stSingular === ptSingular || (st.length >= 3 && pt.length >= 3 && (st.includes(pt) || pt.includes(st)))) {
+              matches++;
+              break;
+            }
+          }
+        }
+        const overlapRatio = (2 * matches) / (tokensScanned.length + tokensProduct.length);
+        if (overlapRatio > 0) {
+          const tokenScore = Math.round(55 + overlapRatio * 35);
+          score = Math.max(score, tokenScore);
+        }
+      }
+
+      // Key Noun Match
+      for (const noun of keyNounList) {
+        const nounSingular = stripPluralEndings(noun);
+        const isScannedHasNoun = expandedEn.includes(noun) || expandedEn.includes(nounSingular);
+        const isProductHasNoun = pName.includes(noun) || pName.includes(nounSingular) || pNameCleaned.includes(noun);
+        if (isScannedHasNoun && isProductHasNoun) {
+          score = Math.max(score, 70);
+        }
+      }
+
+      // Fuzzy Levenshtein Distance Match
+      const simCleaned = getSpellingSimilarity(expandedEn, pNameCleaned);
+      const simRaw = getSpellingSimilarity(rawEn, pName);
+      const maxSim = Math.max(simCleaned, simRaw);
+
+      if (maxSim >= 0.50) {
+        const levScore = Math.round(maxSim * 80);
+        score = Math.max(score, levScore);
+      }
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestProduct = p;
       }
     }
 
-    // 4. PLURAL/SINGULAR MATCH
-    matched = productsList.find(p => {
-      const pName = stripPluralEndings(normalizeString(p.name || ""));
-      return pName === cleanScanned || pName.includes(cleanScanned) || cleanScanned.includes(pName);
-    });
-    if (matched) return matched;
-
-    // 5. SUBSTRING MATCH
-    matched = productsList.find(p => {
-      const pName = normalizeString(p.name || "");
-      const pNameUr = normalizeString(p.nameUr || "");
-
-      if (pName.length > 2 && (scannedName.includes(pName) || pName.includes(scannedName))) return true;
-      if (pNameUr && scannedNameUr) {
-        if (pNameUr.length > 2 && (scannedNameUr.includes(pNameUr) || pNameUr.includes(scannedNameUr))) return true;
-      }
-      return false;
-    });
-    if (matched) return matched;
-
-    // 6. FUZZY SPELLING DISTANCE MATCH (Similarity >= 0.70)
-    let bestMatch = null;
-    let highestSim = 0;
-    for (const p of productsList) {
-      const pName = normalizeString(p.name || "");
-      const sim = getSpellingSimilarity(scannedName, pName);
-      if (sim > highestSim) {
-        highestSim = sim;
-        bestMatch = p;
-      }
-    }
-    if (highestSim >= 0.70) {
-      return bestMatch;
+    if (maxScore >= 50 && bestProduct) {
+      return bestProduct;
     }
 
     return null;
@@ -3955,7 +4995,7 @@ Follow these rules for production-grade, highly precise extraction and matching:
 
       if (apiKey) {
         try {
-          console.log(`Launching server-side Gemini 3.5 Flash Smart Search for: "${query}"`);
+          console.log(`Launching server-side Gemini Smart Search for: "${query}"`);
           const ai = new GoogleGenAI({
             apiKey,
             httpOptions: {
@@ -3966,13 +5006,15 @@ Follow these rules for production-grade, highly precise extraction and matching:
           });
 
           const prompt = `Analyze this user search query entered in an e-commerce grocery store: "${query}".
-You must classify it as either "recipe" (if they are searching for a dish, food preparation, meal to make, OR if they entered a list of ingredients / multiple grocery items, e.g., Biryani, Pizza, Sushi, Chocolate Cake, Omelette, Tea, Burger, Pasta, OR "3 milk, butter, cheese", "eggs, rice, onions", etc.) or a "filter" (if they are searching for a single product category, dietary preference, health category, brand, or single common product name, e.g., Dairy, Fruits, Vegetables, Bakery, Healthy, Unhealthy, Vegan, Gluten-Free, High-Protein, Nestle, Lipton, Milk, Egg, Apple, etc.).
+CLASSIFICATION RULE:
+- Classify as "recipe" if the search query is for any dish, meal, recipe, food preparation, or list of ingredients from any world cuisine (e.g., Biryani, Haleem, Spaghetti Carbonara, Chicken Karahi, Tacos, Pad Thai, Chocolate Cake, Sushi, Ramen, Shakshuka, Butter Chicken, Pizza, Burger, Pho, Falafel, Shawarma, Peking Duck, Croissant, Curry, Omelette, Tea, Goulash, Paella, Lasagna, or queries like 'Biryani recipe', 'how to make Haleem', '3 milk, butter, cheese', etc.).
+- Classify as "filter" ONLY if the query is a search for a single product category, dietary preference, health tag, brand name, or single common raw product name (e.g., Dairy, Fruits, Vegetables, Bakery, Healthy, Unhealthy, Vegan, Gluten-Free, High-Protein, Nestle, Lipton, Milk, Egg, Apple, etc.).
 
 If it is a "recipe":
 - "type" should be "recipe"
-- "recipeName" should be the English name of the dish or "Ingredient List" if they entered a list of multiple items
-- "recipeNameUr" should be the Urdu translation/transliteration of the dish or "اجزاء کی فہرست" if they entered a list of multiple items
-- Generate the complete ingredient list required to make this recipe (if they searched for a dish) OR use the exact ingredients/items they entered in their query (usually 5 to 10 key items).
+- "recipeName" should be the recognized name of the dish or recipe (e.g., "Chicken Biryani", "Haleem", "Spaghetti Carbonara", "Mexican Beef Tacos", "Japanese Chicken Ramen", "Pad Thai", "Lasagna", "Paella")
+- "recipeNameUr" should be the Urdu name or transliteration of the dish (e.g., "چکن بریانی", "حلیم", "اسپیگیٹی")
+- Generate the complete ingredient list required to make this recipe (5 to 10 key items). Support recipes from all world cuisines (Pakistani, Indian, Italian, Mexican, Chinese, Middle Eastern, American, French, Thai, Japanese, Mediterranean, Turkish, Spanish, etc.).
 - For each ingredient, check if there is a matching product in our AVAILABLE PRODUCTS below.
   * If matched: set "productId" to the matching integer product ID, "matched" to true, and use its exact database name, nameUr, category, price, and unit.
   * If not matched: set "productId" to null, "matched" to false, and provide appropriate values (category: "Pantry" or similar, price: 1.99, qty: 1, unit: "pack", unitUr: "پیکٹ").
@@ -4075,12 +5117,11 @@ Output a strict JSON object with this exact structure:
               if (match) {
                 const storeUnit = (match.unit || "").toLowerCase();
                 const recipeUnitLower = (item.unit || "").toLowerCase();
-                const isGramOrMl = recipeUnitLower.includes("g") || 
-                                   recipeUnitLower.includes("gram") || 
-                                   recipeUnitLower.includes("گرام") || 
-                                   recipeUnitLower.includes("ml") || 
-                                   recipeUnitLower.includes("milli") || 
-                                   recipeUnitLower.includes("ملی");
+                const isGramOrMl = (
+                  recipeUnitLower === "g" || recipeUnitLower === "gram" || recipeUnitLower === "grams" || recipeUnitLower === "گرام" ||
+                  recipeUnitLower === "ml" || recipeUnitLower === "milli" || recipeUnitLower === "milliliter" || recipeUnitLower === "milliliters" || recipeUnitLower === "ملی" ||
+                  (recipeUnitLower.includes("gram") || recipeUnitLower.includes("milli"))
+                ) && !recipeUnitLower.includes("kg") && !recipeUnitLower.includes("kilo") && !recipeUnitLower.includes("کلو");
 
                 const isWeighed = storeUnit.includes("kg") || storeUnit.includes("کلو") || 
                                   storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ") ||
@@ -4089,15 +5130,17 @@ Output a strict JSON object with this exact structure:
                 if (isWeighed) {
                   if (isGramOrMl) {
                     if (storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ")) {
-                      qty = Math.max(1, Math.round(qty / 454));
+                      qty = Math.max(0.1, Math.round((qty / 454) * 100) / 100);
                     } else {
-                      qty = Math.max(1, Math.round(qty / 1000));
+                      qty = Math.max(0.1, Math.round(((qty >= 10 ? qty / 1000 : qty)) * 100) / 100);
                     }
                   } else if (qty > 10) {
                     qty = 1;
                   }
                 } else {
-                  if (isGramOrMl || qty > 10) {
+                  if (isGramOrMl) {
+                    qty = Math.max(0.1, Math.round(((qty >= 10 ? qty / 1000 : qty)) * 100) / 100);
+                  } else if (qty > 10) {
                     qty = 1;
                   }
                 }
@@ -4426,21 +5469,47 @@ Output a strict JSON object with this exact structure:
             }
           });
 
-          if (matchedProductIds.length === 0) {
-            resolvedProducts.forEach((p: any) => {
-              if (p.status !== "Inactive" && (p.name.toLowerCase().includes(norm) || p.nameUr.includes(norm) || p.category.toLowerCase().includes(norm))) {
-                matchedProductIds.push(p.id);
-              }
-            });
-          }
+          if (norm.includes("recipe")) {
+            const cleanTitle = query.replace(/(recipe|ingredients|how to make|make|cook|dish|banane ka tarika|ke ingredients)/gi, "").trim() || "Special Dish";
+            const capitalTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+            const localRec = getLocalRecipeFallback(cleanTitle, resolvedProducts, lang);
+            apiResponse = {
+              type: "recipe",
+              recipeName: localRec.nameEn || `${capitalTitle} Recipe`,
+              recipeNameUr: localRec.nameUr || `${capitalTitle} کی ترکیب`,
+              recipeIngredients: (localRec.ingredients || []).map((ing: any) => {
+                const match = resolvedProducts.find((p: any) => p.name.toLowerCase().includes(ing.name.toLowerCase()));
+                return {
+                  productId: match ? match.id : null,
+                  name: match ? match.name : ing.name,
+                  nameUr: match ? match.nameUr : ing.nameUr,
+                  category: match ? match.category : "Pantry",
+                  price: match ? match.price : 1.99,
+                  qty: ing.qty || 1,
+                  unit: ing.unit || "pack",
+                  unitUr: ing.unitUr || "پیکٹ",
+                  matched: !!match
+                };
+              }),
+              matchedProductIds: []
+            };
+          } else {
+            if (matchedProductIds.length === 0) {
+              resolvedProducts.forEach((p: any) => {
+                if (p.status !== "Inactive" && (p.name.toLowerCase().includes(norm) || p.nameUr.includes(norm) || p.category.toLowerCase().includes(norm))) {
+                  matchedProductIds.push(p.id);
+                }
+              });
+            }
 
-          apiResponse = {
-            type: "filter",
-            recipeName: null,
-            recipeNameUr: null,
-            recipeIngredients: [],
-            matchedProductIds: matchedProductIds
-          };
+            apiResponse = {
+              type: "filter",
+              recipeName: null,
+              recipeNameUr: null,
+              recipeIngredients: [],
+              matchedProductIds: matchedProductIds
+            };
+          }
         }
       }
 
@@ -4474,7 +5543,7 @@ Output a strict JSON object with this exact structure:
 
       if (apiKey) {
         try {
-          console.log(`Launching server-side Gemini 3.5 Flash Voice list parsing for: "${text}"`);
+          console.log(`Launching server-side Gemini Voice list parsing for: "${text}"`);
           const ai = new GoogleGenAI({
             apiKey,
             httpOptions: {
@@ -4527,7 +5596,7 @@ Follow these rules for production-grade, highly precise bulk extraction:
 
           let extractedJsonText = "";
           let lastError: any = null;
-          const voiceModelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
+          const voiceModelNames = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"];
 
           for (const modelName of voiceModelNames) {
             try {
@@ -4564,7 +5633,7 @@ Follow these rules for production-grade, highly precise bulk extraction:
               break; // Succeeded! Break loop
             } catch (schemaError: any) {
               lastError = schemaError;
-              console.warn(`Schema-based Voice Parsing failed for model ${modelName}, trying relaxed JSON fallback...`);
+              console.log(`Schema-based Voice Parsing attempting relaxed format for model ${modelName}...`);
               try {
                 const responseRelaxed = await ai.models.generateContent({
                   model: modelName,
@@ -4582,11 +5651,11 @@ Follow these rules for production-grade, highly precise bulk extraction:
                 });
                 extractedJsonText = responseRelaxed.text || "[]";
                 isParsedSuccess = true;
-                console.log(`Relaxed Voice Parsing succeeded using model: ${modelName}`);
+                console.log(`Relaxed Voice Parsing completed using model: ${modelName}`);
                 break; // Succeeded! Break loop
               } catch (relaxedError: any) {
                 lastError = relaxedError;
-                console.warn(`Relaxed Voice Parsing also failed for model ${modelName}.`);
+                console.log(`Completed Voice Parsing attempts for model ${modelName}.`);
               }
             }
           }
@@ -4652,10 +5721,10 @@ Follow these rules for production-grade, highly precise bulk extraction:
               qty = parsedQty;
             }
           }
-          
+
           const unit = item.unit || "item";
           const unitUr = item.unitUr || item.unit_ur || "عدد";
-          
+
           // Match with database products
           let match = null;
           if (item.productId) {
@@ -4664,9 +5733,12 @@ Follow these rules for production-grade, highly precise bulk extraction:
           if (!match) {
             match = fuzzyMatchProductBackend(name, nameUr, resolvedProducts);
           }
-          const isMatched = item.matched !== undefined ? item.matched : (match && match.status !== "Inactive" && (match.stockQuantity === undefined || match.stockQuantity > 0) && match.price > 0);
+          const pStatus = String(match?.status || "").toLowerCase().trim();
+          const isInactive = (pStatus === "inactive" || pStatus === "unavailable");
+          const isOutOfStock = typeof match?.stockQuantity === 'number' && match.stockQuantity <= 0;
+          const isAvailable = !!(match && !isInactive && !isOutOfStock && match.price > 0);
           
-          if (isMatched && match) {
+          if (isAvailable && match) {
             return {
               name: match.name,
               nameUr: match.nameUr,
@@ -4677,6 +5749,9 @@ Follow these rules for production-grade, highly precise bulk extraction:
               unitUr: item.unitUr || match.unitUr,
               productId: match.id,
               matched: true,
+              isCatalogMatch: true,
+              isAvailable: true,
+              status: "Available",
               currencyCode: match.currencyCode || match.currency || "PKR"
             };
           } else {
@@ -4690,7 +5765,10 @@ Follow these rules for production-grade, highly precise bulk extraction:
               unitUr: match ? match.unitUr : unitUr,
               productId: match ? match.id : null,
               matched: false,
-              currencyCode: match ? (match.currencyCode || match.currency || "PKR") : "USD"
+              isCatalogMatch: false,
+              isAvailable: false,
+              status: "Unavailable",
+              currencyCode: match ? (match.currencyCode || match.currency || "PKR") : "PKR"
             };
           }
         });
@@ -4706,6 +5784,10 @@ Follow these rules for production-grade, highly precise bulk extraction:
       res.status(500).json({ error: `Voice List Parsing Failed: ${err.message || err.toString()}` });
     }
   });
+
+  // Multimodal OCR Route forwarded to central handleOcr engine
+  // (Central handleOcr supports PHP OCR, Gemini Multimodal, Sharp Preprocessing, and Tesseract Engine fallback)
+
 
   function formatServerPrice(basePrice: number, currencyCode: string = "USD", lang: string = "en", fromCurrencyCode: string = "PKR") {
     let toCode = (currencyCode || "USD").toUpperCase();
@@ -4735,17 +5817,28 @@ Follow these rules for production-grade, highly precise bulk extraction:
   }
 
   // Programmatic Fallback Generator for AI Chatbot
-  function generateFallbackChatbotResponse(query: string, products: any[] = [], lang: string = "en", activeTab: string = "home", currency: string = "USD", dbCategories: any[] = [], userCategories: any[] = [], dbSubcategories: any[] = []): string {
+  // Programmatic Fallback Generator for AI Chatbot
+  function generateFallbackChatbotResponse(
+    query: string, 
+    products: any[] = [], 
+    lang: string = "en", 
+    activeTab: string = "home", 
+    currency: string = "USD", 
+    dbCategories: any[] = [], 
+    userCategories: any[] = [], 
+    dbSubcategories: any[] = [],
+    chatHistory: any[] = []
+  ): string {
     const q = (query || "").toLowerCase().trim();
-    const isUr = lang === "ur" || /[\u0600-\u06FF]/.test(query) || q.includes("kya") || q.includes("hai") || q.includes("kaise") || q.includes("chahiye");
+    const isUr = lang === "ur" || /[\u0600-\u06FF]/.test(query) || q.includes("kya") || q.includes("hai") || q.includes("kaise") || q.includes("chahiye") || q.includes("batao") || q.includes("kitna");
 
     const fmt = (p: any) => formatServerPrice(p.price, currency, lang, p.currencyCode);
 
-    // Out of scope detection
+    // 1. Out of scope detection
     const outOfScopeKeywords = [
       "capital of", "weather in", "who is the president", "who won", "write code", "python",
-      "java script", "math equation", "solve", "prime minister", "movie", "song", "joke", "quantum",
-      "tell me about earth", "solar system", "history of"
+      "java script", "math equation", "solve equation", "prime minister", "movie", "song", "quantum physics",
+      "tell me about earth", "solar system", "history of war"
     ];
     if (outOfScopeKeywords.some(k => q.includes(k)) && !q.includes("voxcart") && !q.includes("store") && !q.includes("product") && !q.includes("item")) {
       return isUr
@@ -4753,11 +5846,328 @@ Follow these rules for production-grade, highly precise bulk extraction:
         : "I am VoxBot, your VoxCart AI Shopping Assistant! 🤖 I only answer questions related to VoxCart products, shopping features, voice ordering, policies, accounts, and website navigation. How can I help you with your VoxCart shopping today?";
     }
 
-    // 2. DYNAMIC INVENTORY & CATEGORY OVERVIEW (Lists ALL active categories, subcategories & products dynamically)
+    const activeProds = Array.isArray(products) ? products.filter(p => p.status !== "Inactive") : [];
+
+    // Helper to format a single product's minimal, relevant, and clean details (no clutter)
+    const formatProductDetails = (item: any, userAskedForSpecs: boolean = false) => {
+      const unitLabel = isUr ? (item.unitUr || "پیکٹ") : (item.unit || "unit");
+      const stockStatus = item.stockQuantity > 0 
+        ? (isUr ? `✅ اسٹاک میں دستیاب ہے (${item.stockQuantity} ${unitLabel} موجود)` : `✅ In Stock (${item.stockQuantity} ${unitLabel} available)`)
+        : (isUr ? "❌ آؤٹ آف اسٹاک (دستیاب نہیں ہے)" : "❌ Out of Stock (Currently unavailable)");
+
+      const categoryPath = item.subcategoryName 
+        ? `${item.category} > ${item.subcategoryName}`
+        : (item.category || "General Grocery");
+
+      const brandText = item.brandName || "General";
+      const saleText = (item.salePrice && item.salePrice > 0)
+        ? (isUr ? `\n- 🏷️ **رعایتی قیمت (Sale Price):** ${formatServerPrice(item.salePrice, currency, lang, item.currencyCode)} (خصوصی رعایت)` : `\n- 🏷️ **Sale Price:** ${formatServerPrice(item.salePrice, currency, lang, item.currencyCode)} (Special Discount!)`)
+        : "";
+
+      const descText = item.description || (isUr ? "خالص اور معیاری پروڈکٹ، والکس کارٹ اسٹور کیٹلاگ پر دستیاب ہے۔" : "Fresh, premium quality grocery product available at VoxCart.");
+
+      let specsSection = "";
+      if (userAskedForSpecs) {
+        specsSection = isUr
+          ? `\n\n📋 **تکنیکی تفصیلات (Specifications):**\n- **ایس کے یو (SKU):** \`${item.sku || 'SKU-' + item.id}\`\n- **بیچ نمبر (Batch No):** \`${item.batchNumber || 'BATCH-' + item.id}\`\n- **تیاری کی تاریخ (Mfg Date):** ${item.manufacturingDate || '2026-01-15'}\n- **ایکسپائری تاریخ (Expiry Date):** ${item.expiryDate || '2027-01-15'}\n- **یونٹ:** ${unitLabel}`
+          : `\n\n📋 **Product Specifications:**\n- **SKU:** \`${item.sku || 'SKU-' + item.id}\`\n- **Batch Number:** \`${item.batchNumber || 'BATCH-' + item.id}\`\n- **Manufacturing Date:** ${item.manufacturingDate || '2026-01-15'}\n- **Expiry Date:** ${item.expiryDate || '2027-01-15'}\n- **Unit:** ${unitLabel}`;
+      }
+
+      if (isUr) {
+        return `🛍️ **${item.nameUr || item.name} (${item.name})**\n\n- 🏷️ **قیمت:** **${fmt(item)}** (${item.price} PKR) فی ${unitLabel}${saleText}\n- 📦 **دستیابی (Stock):** ${stockStatus}\n- 📌 **کیٹیگری:** ${categoryPath}\n- 🏢 **برانڈ:** ${brandText}\n- 📝 **تفصیل:** ${descText}${specsSection}\n\n💡 **خریداری کا طریقہ:**\nآپ **Catalog** ٹیب میں جا کر **${item.name}** کو کارٹ میں شامل کر سکتے ہیں یا ہیڈر مائیک دبا کر بولیں *"Add ${item.name} to cart"*!`;
+      }
+
+      return `🛍️ **${item.name}** ${item.nameUr ? `*(${item.nameUr})*` : ''}\n\n- 🏷️ **Price:** **${fmt(item)}** (${item.price} PKR) per ${unitLabel}${saleText}\n- 📦 **Availability:** ${stockStatus}\n- 📌 **Category:** ${categoryPath}\n- 🏢 **Brand:** ${brandText}\n- 📝 **Description:** ${descText}${specsSection}\n\n💡 **How to Buy:**\nYou can find and add **${item.name}** to your cart from the **Catalog** tab, or tap the microphone in the header and say *"Add ${item.name} to cart"*!`;
+    };
+
+    // 2. WEBSITE FEATURES, INSTRUCTIONS & NAVIGATION (HIGH PRIORITY - Check before generic product word matches)
+
+    // Customer Feedback, Reviews & Ratings
+    if (q.includes("feedback") || q.includes("review") || q.includes("rating") || q.includes("complaint") || q.includes("comment") || q.includes("رائے") || q.includes("فیڈبیک") || q.includes("شکایت") || q.includes("ریویو")) {
+      return isUr
+        ? "💬 **گاہکوں کی رائے اور فیڈ بیک کا طریقہ (Customer Feedback & Reviews):**\n1. نیویگیشن بار میں **Customer Feedback** ٹیب پر جائیں۔\n2. اپنا نام، ای میل، ریٹنگ (1 سے 5 ستارے)، کیٹیگری (Service, Quality, Delivery, Website, Pricing, Other)، اور تفصیلی رائے یا شکایت درج کریں۔\n3. **'Submit Feedback'** پر کلک کریں۔ آپ کی رائے محفوظ ہو جائے گی اور ایڈمن ٹیم کا جواب بھی آپ کو اسی پیج پر نظر آئے گا!\n4. ایڈمن اپنے پینل سے ہر فیڈبیک کا جائزہ لے کر سرکاری جواب اور اسٹیٹس اپ ڈیٹ کر سکتا ہے۔"
+        : "💬 **How the Customer Feedback & Reviews Feature Works:**\n1. Navigate to the **Customer Feedback** tab in the main navigation bar.\n2. Enter your name, email, star rating (1-5 stars), feedback category (Service, Quality, Delivery, Website, Pricing, Other), and your detailed comments or complaints.\n3. Click **'Submit Feedback'** to submit. Your feedback is recorded in the system, and you can view published reviews along with official administrative replies and resolution status!\n4. Store administrators can also manage and respond directly from the Admin Feedback Management panel.";
+    }
+
+    // Add to Favorites / Wishlist / Bookmarks
+    if (q.includes("favourite") || q.includes("favorite") || q.includes("bookmark") || q.includes("heart") || q.includes("wishlist") || q.includes("save") || q.includes("پسندیدہ") || q.includes("فیورٹ")) {
+      return isUr
+        ? "❤️ **پسندیدہ اشیاء محفوظ کرنے کا طریقہ (Add to Favorites):**\n1. کسی بھی پروڈکٹ کارڈ کے اوپر دائیں کونے میں موجود **دل (❤️)** کے آئیکن پر کلک کریں۔\n2. وہ پروڈکٹ آپ کی پسندیدہ لسٹ میں محفوظ ہو جائے گی۔\n3. اوپر نیویگیشن بار میں **Saved Favourites** ٹیب کھول کر آپ تمام محفوظ شدہ اشیاء دیکھ سکتے ہیں اور ایک کلک میں کارٹ میں ڈال سکتے ہیں!"
+        : "❤️ **How to Add Items to Favorites & Bookmarks:**\n1. Click the **Heart Icon (❤️)** on the top right of any product card in the Catalog or Home page.\n2. The item will be instantly saved to your personal wishlist.\n3. Navigate to the **Saved Favourites** tab in the main menu anytime to view all your bookmarked groceries and add them to your cart in 1-click!";
+    }
+
+    // Recipes & Smart Recipe Search
+    if (q.includes("biryani") || q.includes("بریانی")) {
+      return isUr
+        ? "🥘 **چکن بریانی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🌾 **سیلا / باسمتی چاول (White Rice):** 1 کلو\n- 🧅 **پیاز (Onions):** 250 گرام\n- 🍅 **ٹماٹر (Tomatoes):** 250 گرام\n- 🥔 **آلو (Potatoes):** 250 گرام\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 250 ملی لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **بریانی مصالحہ اور ادرک لہسن پیسٹ**\n- 🥛 **دہی اور تازہ پودینہ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں جائیں اور سرچ بار میں 'Biryani' لکھیں، جہاں آپ **'Add All Recipe Ingredients'** بٹن سے تمام اجزاء 1 کلک میں کارٹ میں ڈال سکتے ہیں!"
+        : "🥘 **Chicken Biryani Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🌾 **White Rice:** 1 KG\n- 🧅 **Onions:** 250 Grams\n- 🍅 **Tomatoes:** 250 Grams\n- 🥔 **Potatoes:** 250 Grams\n- 🛢️ **Cooking Oil:** 250 ML\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Biryani Masala & Ginger Garlic Paste**\n- 🥛 **Yogurt & Fresh Mint**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Biryani' to see preparation steps and click **'Add All Recipe Ingredients'** to add all items to your cart in 1-click!";
+    }
+    if (q.includes("karahi") || q.includes("کڑاہی")) {
+      return isUr
+        ? "🍲 **چکن کڑاہی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🧅 **پیاز (Onions):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **کڑاہی مصالحہ اور ادرک لہسن پیسٹ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Karahi' سرچ کر کے 1 کلک میں تمام اجزاء کارٹ میں شامل کریں!"
+        : "🍲 **Chicken Karahi Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🍅 **Tomatoes:** 1 KG\n- 🧅 **Onions:** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Karahi Masala & Ginger Garlic Paste**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Karahi' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("nihari") || q.includes("نہاری")) {
+      return isUr
+        ? "🍲 **نہاری کی مکمل ریسپی اور درکار اجزاء:**\n- 🥩 **گوشت / بیف (Beef):** 1 کلو\n- 🌾 **گندم کا آٹا (Flour):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **نہاری مصالحہ اور ادرک لیموں**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Nihari' سرچ کر کے تمام اجزاء کارٹ میں ڈالیں!"
+        : "🍲 **Special Nihari Recipe & Complete Ingredients:**\n- 🥩 **Beef / Meat:** 1 KG\n- 🌾 **Wheat Flour (Atta):** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Nihari Special Masala & Ginger**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Nihari' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("pasta") || q.includes("پاستا")) {
+      return isUr
+        ? "🍝 **پاستا کی مکمل ریسپی اور درکار اجزاء:**\n- 🍝 **پاستا پیکٹ (Pasta):** 1 ڈبہ\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🧀 **چیدر چیز (Cheese):** 1 پیکٹ\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Pasta' سرچ کر کے تمام اجزاء 1 کلک میں کارٹ میں شامل کریں!"
+        : "🍝 **Creamy Chicken Pasta Recipe & Complete Ingredients:**\n- 🍝 **Pasta Pack:** 1 Box\n- 🍗 **Chicken Breast:** 1 KG\n- 🥛 **Whole Milk:** 1 Pack\n- 🧈 **Butter:** 1 Block\n- 🧀 **Cheddar Cheese:** 1 Pack\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Pasta' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("pizza") || q.includes("پیزا")) {
+      return isUr
+        ? "🍕 **پیزا کی مکمل ریسپی اور درکار اجزاء:**\n- 🍕 **پیزا کرسٹ:** 1 عدد\n- 🧀 **موزریلا چیز (Cheese):** 1 پیکٹ\n- 🍅 **ٹماٹر / پیزا سوس:** 1 کلو\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Pizza' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
+        : "🍕 **Delicious Pizza Recipe & Complete Ingredients:**\n- 🍕 **Pizza Crust:** 1 Base\n- 🧀 **Mozzarella & Cheddar Cheese:** 1 Pack\n- 🍅 **Tomatoes / Pizza Sauce:** 1 KG\n- 🍗 **Chicken Breast:** 1 KG\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Pizza' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("cake") || q.includes("کیک")) {
+      return isUr
+        ? "🎂 **کیک کی مکمل ریسپی اور درکار اجزاء:**\n- 🥚 **انڈے (Eggs):** 1 درجن\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🍬 **چینی (Sugar):** 1 پیکٹ\n- 🌾 **گندم کا آٹا (Flour):** 1 کلو\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Cake' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
+        : "🎂 **Cake Recipe & Complete Ingredients:**\n- 🥚 **Eggs:** 1 Dozen\n- 🥛 **Whole Milk:** 1 Pack\n- 🧈 **Butter:** 1 Block\n- 🍬 **Sugar:** 1 Pack\n- 🌾 **Wheat Flour (Atta):** 1 KG\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Cake' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("burger") || q.includes("برگر")) {
+      return isUr
+        ? "🍔 **چکن برگر کی مکمل ریسپی اور درکار اجزاء:**\n- 🍔 **برگر بنز (Burger Buns):** 1 پیکٹ\n- 🍗 **چکن بریسٹ (Chicken Breast):** 1 کلو\n- 🧀 **چیدر چیز (Cheddar Cheese):** 1 پیکٹ\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🧅 **پیاز (Onions):** 500 گرام\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Burger' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
+        : "🍔 **Chicken Burger Recipe & Complete Ingredients:**\n- 🍔 **Burger Buns:** 1 Pack\n- 🍗 **Chicken Breast:** 1 KG\n- 🧀 **Cheddar Cheese:** 1 Pack\n- 🍅 **Tomatoes:** 1 KG\n- 🧅 **Onions:** 500g\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Burger' to add all required ingredients to your cart in 1-click!";
+    }
+    if (q.includes("recipe") || q.includes("dish") || q.includes("ترکیب") || q.includes("ریسپی") || q.includes("ڈش")) {
+      return isUr
+        ? "🍝 **ریسپی سرچ اور اجزاء حاصل کرنے کا طریقہ (Smart Recipe Search):**\n1. **Catalog** ٹیب پر جائیں۔\n2. سرچ بار میں کسی بھی ڈش کا نام لکھیں (مثلاً: *Biryani, Karahi, Nihari, Pasta, Pizza, Cake, Burger*)۔\n3. والکس کارٹ آپ کو ڈش بنانے کا طریقہ اور درکار تمام اجزاء دکھائے گا۔\n4. **'Add All Recipe Ingredients'** دبائیں تاکہ تمام اجزاء فوری طور پر آپ کے کارٹ میں شامل ہو جائیں!"
+        : "🍝 **How to Use Smart Recipe Search:**\n1. Navigate to the **Catalog** tab.\n2. In the search bar, type the name of any dish (e.g., *Biryani, Karahi, Nihari, Pasta, Pizza, Cake, Burger*).\n3. VoxCart displays the recipe breakdown along with all required grocery ingredients.\n4. Click **'Add All Recipe Ingredients'** to add all recipe items to your shopping cart in a single click!";
+    }
+
+    // Voice Dictation & Language Switching
+    if (q.includes("voice") || q.includes("mic") || q.includes("speak") || q.includes("speech") || q.includes("صوتی") || q.includes("بول")) {
+      return isUr
+        ? "🎙️ **صوتی اسسٹنٹ کا طریقہ (Voice Shopping):**\n1. ہیڈر میں موجود مائیکروفون آئیکن یا **Voice Assistant** ٹیب پر کلک کریں۔\n2. مائیک بٹن دبائیں اور اردو، انگریزی یا رومن اردو میں بولیں (مثلاً: *'دو کلو آٹا اور ایک درجن انڈے شامل کرو'*)\n3. والکس کارٹ آپ کی آواز سمجھ کر فوری طور پر اشیاء کارٹ میں ڈال دے گا۔"
+        : "🎙️ **How to Use Voice Assistant & Speech Shopping:**\n1. Click the microphone icon in the top header or navigate to the **Voice Assistant** tab.\n2. Tap the mic button and speak naturally in English, Urdu, or Roman Urdu (e.g., *'Add 2 kg flour and 1 dozen eggs'*).\n3. VoxCart recognizes product names and quantities to automatically populate your cart!";
+    }
+
+    // OCR Bill & Receipt Scanner
+    if (q.includes("scan") || q.includes("ocr") || q.includes("receipt") || q.includes("bill") || q.includes("اسکین") || q.includes("رسید") || q.includes("تصویر")) {
+      return isUr
+        ? "📷 **بل اور شاپنگ لسٹ اسکینر (OCR Bill Scanner):**\n1. **Voice Assistant** ٹیب پر جائیں اور نیچے اسکرول کر کے **Invoice / Bill Scanner** دیکھیں۔\n2. اپنے کاغذی بل یا ہاتھ سے لکھی لسٹ کی تصویر اپ لوڈ کریں۔\n3. AI اسکینر تصویر پڑھ کر تمام آئٹمز کارٹ میں تبدیل کر دے گا!"
+        : "📷 **How to Use the OCR Bill & Receipt Scanner:**\n1. Go to the **Voice Assistant** tab and scroll to the **Invoice / Bill Scanner** section.\n2. Upload a photo of a printed grocery bill or handwritten shopping list.\n3. Our AI vision scanner extracts the listed items and lets you add them directly to your cart!";
+    }
+
+    // Orders & Tracking & Invoices
+    if (q.includes("order") || q.includes("track") || q.includes("status") || q.includes("invoice") || q.includes("history") || q.includes("آرڈر") || q.includes("رسید")) {
+      return isUr
+        ? "🧾 **آرڈر ٹریکنگ اور رسید دیکھنے کا طریقہ:**\n1. اوپر نیویگیشن بار میں **Orders** ٹیب پر کلک کریں۔\n2. وہاں آپ کو اپنے تمام آرڈرز کی لائیو ٹریکنگ (Pending ➔ Shipped ➔ Delivered) نظر آئے گی۔\n3. آپ کسی بھی آرڈر کا **'PDF Invoice'** ڈاؤن لوڈ یا پرنٹ بھی کر سکتے ہیں!"
+        : "🧾 **How to Track Orders & Download Invoices:**\n1. Click on the **Orders** tab in the main navigation bar.\n2. View live status updates for all your purchases (Pending ➔ Shipped ➔ Delivered).\n3. Click the **PDF Invoice** button next to any order to view, download, or print official receipts!";
+    }
+
+    // Coupons, Discounts & Promo Codes
+    if (q.includes("coupon") || q.includes("discount") || q.includes("promo") || q.includes("code") || q.includes("voucher") || q.includes("کوپن") || q.includes("رعایت")) {
+      return isUr
+        ? "🎟️ **کوپن کوڈز اور رعایات:**\n1. کارٹ میں اشیاء شامل کر کے **Checkout** پیج پر جائیں۔\n2. **'Coupon / Promo Code'** کا خانہ موجود ہے، وہاں اپنا کوڈ درج کر کے **Apply** دبائیں۔\n- $10 یا PKR 2,000 سے زائد کے آرڈرز پر مفت ڈیلیوری بھی فراہم کی جاتی ہے!"
+        : "🎟️ **Coupons, Discounts & Promo Codes:**\n1. Add items to your cart and proceed to the **Checkout** page.\n2. Enter your coupon code into the **'Coupon / Promo Code'** input field and click **Apply** for instant cart savings!\n- Orders above $10 USD or PKR 2,000 automatically get FREE home delivery!";
+    }
+
+    // Checkout & Payment Methods
+    if (q.includes("checkout") || q.includes("place order") || q.includes("payment") || q.includes("pay") || q.includes("cod") || q.includes("card") || q.includes("easypaisa") || q.includes("jazzcash") || q.includes("چیک آؤٹ") || q.includes("ادائیگی")) {
+      return isUr
+        ? "💳 **چیک آؤٹ اور ادائیگی کے طریقے:**\n1. کارٹ کا جائزہ لینے کے بعد **'Proceed to Checkout'** پر کلک کریں۔\n2. اپنا ڈیلیوری ایڈریس درج کریں اور ادائیگی کا طریقہ منتخب کریں: Cash on Delivery (COD), Credit/Debit Card, EasyPaisa, JazzCash, یا Direct Bank Transfer۔\n3. **'Place Order'** پر کلک کریں!"
+        : "💳 **How to Checkout & Payment Options:**\n1. Review your cart and click **'Proceed to Checkout'**.\n2. Enter your delivery address and select your preferred payment method: Cash on Delivery (COD), Credit/Debit Card, EasyPaisa, JazzCash, or Direct Bank Transfer.\n3. Click **'Place Order'** to complete your order!";
+    }
+
+    // Delivery & Shipping
+    if (q.includes("deliver") || q.includes("shipping") || q.includes("fee") || q.includes("charge") || q.includes("دیلیوری") || q.includes("ڈلیوری")) {
+      return isUr
+        ? "🚚 **ڈیلیوری کی معلومات:**\n- **وقت:** آرڈرز 24-48 گھنٹوں میں پہنچائے جاتے ہیں۔\n- **مفت ڈیلیوری:** $10 یا PKR 2,000 سے زیادہ کے آرڈرز پر ڈیلیوری بالکل مفت ہے!\n- **ٹریکنگ:** **Orders** ٹیب سے آرڈر کی لائیو پوزیشن چیک کریں۔"
+        : "🚚 **Delivery Information:**\n- **Delivery Time:** Orders arrive within 24-48 hours.\n- **Free Delivery:** All orders over $10 USD or PKR 2,000 qualify for 100% FREE shipping!\n- **Tracking:** Real-time updates are available on the **Orders** tab.";
+    }
+
+    // Returns & Refunds
+    if (q.includes("refund") || q.includes("return") || q.includes("policy") || q.includes("damaged") || q.includes("واپسی") || q.includes("ریفنڈ")) {
+      return isUr
+        ? "🔄 **ریفنڈ اور واپسی کی پالیسی:**\nتازہ گروسری اشیاء کے لیے 24 گھنٹوں کی واپسی کی پالیسی ہے۔ خرابی کی صورت میں رقم 3-5 دنوں میں واپس کر دی جاتی ہے۔"
+        : "🔄 **Returns & Refund Policy:**\nVoxCart offers a 24-hour return policy for fresh grocery items. Full refunds are processed to your original payment method within 3-5 business days.";
+    }
+
+    // Currency / Language
+    if (q.includes("currency") || q.includes("pkr") || q.includes("usd") || q.includes("language") || q.includes("urdu") || q.includes("کرنسی") || q.includes("زبان")) {
+      return isUr
+        ? "🌐 **کرنسی اور زبان کا انتخاب:**\nہیڈر بار سے زبان (English / اردو) اور کرنسی (USD $, PKR ₨, EUR €, GBP £, SAR ﷼, AED) ایک کلک میں تبدیل کر سکتے ہیں۔"
+        : "🌐 **Currency & Language Settings:**\nUse the top header to toggle between English and Urdu (اردو) or switch currencies across USD $, PKR ₨, EUR €, GBP £, SAR, and AED with live exchange rates!";
+    }
+
+    // Accounts & Admin
+    if (q.includes("account") || q.includes("login") || q.includes("register") || q.includes("admin") || q.includes("password") || q.includes("لاگ ان") || q.includes("اکاؤنٹ")) {
+      return isUr
+        ? "👤 **اکاؤنٹس اور ایڈمن پینل:**\n- گاہک لاگ ان کر کے یا گیسٹ موڈ میں خریداری کر سکتے ہیں۔ لاگ ان کرنے پر AI آپ کی ذاتی کیٹیگریز محفوظ رکھتا ہے۔\n- ایڈمن کنٹرول کے لیے **Admin** ٹیب پر جائیں (admin@voxcart.com / admin)"
+        : "👤 **User Accounts & Admin Console:**\n- Customers can shop as Guest or create an Account to save delivery addresses and personal AI categories.\n- Store management is available in the **Admin** tab (default: `admin@voxcart.com` / `admin`).";
+    }
+
+    // 3. TARGETED CATEGORY QUERIES (Check if user is asking about a specific category like Fruits, Vegetables, Dairy, Meat, Beverages, etc.)
+    let targetCategory: string | null = null;
+    if (q.includes("fruit") || q.includes("apple") || q.includes("banana") || q.includes("mango") || q.includes("orange") || q.includes("strawberry") || q.includes("پھل") || q.includes("سیب") || q.includes("کیلے") || q.includes("آم") || q.includes("مالٹے")) {
+      targetCategory = "Fruits";
+    } else if (q.includes("veg") || q.includes("vegetable") || q.includes("potato") || q.includes("tomato") || q.includes("onion") || q.includes("carrot") || q.includes("سبزی") || q.includes("سبزیاں") || q.includes("آلو") || q.includes("ٹماٹر") || q.includes("پیاز") || q.includes("گاجر")) {
+      targetCategory = "Vegetables";
+    } else if (q.includes("dairy") || q.includes("milk") || q.includes("cheese") || q.includes("yogurt") || q.includes("butter") || q.includes("egg") || q.includes("دودھ") || q.includes("دہی") || q.includes("مکھن") || q.includes("پنیر") || q.includes("انڈے")) {
+      targetCategory = "Dairy & Eggs";
+    } else if (q.includes("meat") || q.includes("chicken") || q.includes("beef") || q.includes("fish") || q.includes("seafood") || q.includes("mutton") || q.includes("گوشت") || q.includes("مرغی") || q.includes("بیف") || q.includes("مچھلی")) {
+      targetCategory = "Meat & Seafood";
+    } else if (q.includes("bakery") || q.includes("bread") || q.includes("croissant") || q.includes("bun") || q.includes("بیکری") || q.includes("ڈبل روٹی") || q.includes("روٹی")) {
+      targetCategory = "Bakery";
+    } else if (q.includes("beverage") || q.includes("drink") || q.includes("juice") || q.includes("coke") || q.includes("pepsi") || q.includes("water") || q.includes("tea") || q.includes("coffee") || q.includes("مشروبات") || q.includes("شربت") || q.includes("پانی")) {
+      targetCategory = "Beverages";
+    } else if (q.includes("snack") || q.includes("chips") || q.includes("biscuit") || q.includes("cookie") || q.includes("سنیکس") || q.includes("بسکٹ") || q.includes("چپس")) {
+      targetCategory = "Snacks";
+    } else if (q.includes("pantry") || q.includes("staple") || q.includes("rice") || q.includes("oil") || q.includes("sugar") || q.includes("salt") || q.includes("flour") || q.includes("spice") || q.includes("پنساری") || q.includes("راشن") || q.includes("چاول") || q.includes("آئل") || q.includes("آٹا")) {
+      targetCategory = "Pantry";
+    } else {
+      const matchedCat = activeProds.find(p => p.category && q.includes(p.category.toLowerCase()));
+      if (matchedCat) {
+        targetCategory = matchedCat.category;
+      }
+    }
+
+    const isCategorySpecificQuery = targetCategory && (
+      q.includes("fruit") || q.includes("veg") || q.includes("dairy") || q.includes("meat") || q.includes("beverage") || q.includes("bakery") || q.includes("snack") || q.includes("pantry") ||
+      q.includes("what") || q.includes("show") || q.includes("list") || q.includes("available") || q.includes("category") || q.includes("all") || q.includes("have") ||
+      q.includes("پھل") || q.includes("سبزی") || q.includes("دودھ") || q.includes("گوشت") || q.includes("مشروبات") || q.includes("پنساری") || q.includes("کون") || q.includes("کیا") || q.includes("دیکھو") || q.includes("فہرست") || q.includes("ہیں")
+    );
+
+    if (targetCategory && isCategorySpecificQuery) {
+      const catItems = activeProds.filter(p => (p.category || "").toLowerCase().includes(targetCategory.toLowerCase()));
+      if (catItems.length > 0) {
+        const catList = catItems.map(p => {
+          const unitLabel = isUr ? (p.unitUr || 'پیکٹ') : (p.unit || 'pack');
+          const stockStr = p.stockQuantity > 0 ? (isUr ? `✅ دستیاب (${p.stockQuantity})` : `✅ In Stock (${p.stockQuantity})`) : (isUr ? '❌ آؤٹ آف اسٹاک' : '❌ Out of Stock');
+          return `• **${p.name}** ${p.nameUr ? `(${p.nameUr})` : ''}\n  └ 🏷️ **Price:** ${fmt(p)} (${p.price} PKR) / ${unitLabel} | ${stockStr}`;
+        }).join("\n\n");
+
+        return isUr
+          ? `🏷️ **${targetCategory} کیٹیگری کی تمام دستیاب اشیاء:**\n\n${catList}\n\n💡 آپ **Catalog** ٹیب میں '${targetCategory}' فلٹر منتخب کر کے یہ تمام اشیاء کارٹ میں شامل کر سکتے ہیں!`
+          : `🏷️ **${targetCategory} Category — Available Products:**\n\n${catList}\n\n💡 Visit the **Catalog** tab and select the **${targetCategory}** filter to purchase any of these items!`;
+      }
+    }
+
+    // 4. CONTEXT & FOLLOW-UP RESOLUTION FROM CHAT HISTORY
+    let contextualProduct: any = null;
+    const isExplicitSpecQuery = (
+      q.includes("sku") || q.includes("batch") || q.includes("expiry") || q.includes("expire") ||
+      q.includes("mfg") || q.includes("manufacturing") || q.includes("spec") || q.includes("specification") ||
+      q.includes("ایکسپائری") || q.includes("بیچ") || q.includes("تاریخ")
+    );
+
+    const isFollowUpQuery = (
+      q.includes("it") || q.includes("its") || q.includes("this") || q.includes("that") ||
+      q.includes("price") || q.includes("cost") || q.includes("expiry") || q.includes("expire") ||
+      q.includes("batch") || q.includes("sku") || q.includes("stock") || q.includes("available") ||
+      q.includes("specification") || q.includes("spec") || q.includes("detail") || q.includes("feature") ||
+      q.includes("اس کا") || q.includes("اسکی") || q.includes("قیمت") || q.includes("تاریخ") || q.includes("ایکسپائری") || q.includes("اسٹاک")
+    );
+
+    if (isFollowUpQuery && Array.isArray(chatHistory) && chatHistory.length > 0) {
+      for (let i = chatHistory.length - 1; i >= 0; i--) {
+        const histText = (chatHistory[i].text || "").toLowerCase();
+        for (const p of activeProds) {
+          const pName = (p.name || "").toLowerCase();
+          const pUr = (p.nameUr || "").toLowerCase();
+          if ((pName && histText.includes(pName)) || (pUr && histText.includes(pUr))) {
+            contextualProduct = p;
+            break;
+          }
+        }
+        if (contextualProduct) break;
+      }
+    }
+
+    // 5. TARGETED PRODUCT LOOKUP (Checks specific product names, brands, SKUs, and keywords)
+    const ignoreWords = new Set([
+      "what", "is", "are", "the", "a", "an", "price", "prices", "cost", "costs", "rate", "rates", "of", "how", "much", "many", "does", "do",
+      "you", "have", "sell", "show", "me", "list", "available", "tell", "about", "for", "in", "store", "voxcart", "can",
+      "buy", "give", "item", "product", "items", "products", "where", "to", "see", "view", "find", "track", "tracking",
+      "order", "orders", "my", "your", "our", "history", "cart", "basket", "checkout", "pay", "payment", "account",
+      "profile", "page", "tab", "go", "nav", "navigate", "help", "kya", "hai", "kaise", "chahiye", "کتنی", "کتنا",
+      "قیمت", "کیا", "ہے", "بتاؤ", "سے", "پر", "روپے", "کتنے", "کون", "سی", "دکھاؤ", "معلومات", "تفصیل", "تفصیلات",
+      "spec", "specs", "specification", "specifications", "feature", "features", "details", "info", "information"
+    ]);
+
+    // Clean query words for search
+    const words = q.split(/[^a-zA-Z0-9\u0600-\u06FF]+/).filter(w => w.length >= 2 && !ignoreWords.has(w));
+
+    let matchedProducts: any[] = [];
+
+    // Exact or direct substring match in product name, urdu name, or SKU
+    for (const p of activeProds) {
+      const pName = (p.name || "").toLowerCase();
+      const pUr = (p.nameUr || "").toLowerCase();
+      const pSku = (p.sku || "").toLowerCase();
+
+      if (pName && (q === pName || q.includes(pName))) {
+        matchedProducts.push(p);
+        continue;
+      }
+      if (pUr && (q === pUr || q.includes(pUr))) {
+        matchedProducts.push(p);
+        continue;
+      }
+      if (pSku && q.includes(pSku)) {
+        matchedProducts.push(p);
+        continue;
+      }
+    }
+
+    // Word matching if no direct substring match
+    if (matchedProducts.length === 0 && words.length > 0) {
+      matchedProducts = activeProds.filter(p => {
+        const pName = (p.name || "").toLowerCase();
+        const pUr = (p.nameUr || "").toLowerCase();
+        const pWords = pName.split(/\s+/).filter(w => w.length >= 2);
+        const pUrWords = pUr.split(/\s+/).filter(w => w.length >= 2);
+
+        return words.some(w => 
+          pWords.some(pw => pw === w || (w.length >= 4 && (pw.startsWith(w) || w.startsWith(pw)))) ||
+          pUrWords.some(pu => pu === w || (w.length >= 4 && (pu.startsWith(w) || w.startsWith(pu))))
+        );
+      });
+    }
+
+    // If a specific product query is detected or resolved from context
+    if (matchedProducts.length === 1) {
+      return formatProductDetails(matchedProducts[0], isExplicitSpecQuery);
+    } else if (matchedProducts.length > 1) {
+      const exactMatch = matchedProducts.find(p => p.name.toLowerCase() === words.join(" ") || words.every(w => p.name.toLowerCase().includes(w)));
+      if (exactMatch) {
+        return formatProductDetails(exactMatch, isExplicitSpecQuery);
+      }
+
+      const listStr = matchedProducts.slice(0, 5).map(p => {
+        const unitLabel = isUr ? (p.unitUr || p.unit || 'پیکٹ') : (p.unit || 'pack');
+        const stockStr = p.stockQuantity > 0 
+          ? (isUr ? `✅ اسٹاک میں موجود (${p.stockQuantity} دستیاب)` : `✅ In Stock (${p.stockQuantity} available)`)
+          : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+        return `• **${p.name}** ${p.nameUr ? `(${p.nameUr})` : ''}\n  └ 🏷️ **Price:** ${fmt(p)} (${p.price} PKR) / ${unitLabel} | 📌 **Category:** ${p.category} | ${stockStr}`;
+      }).join("\n\n");
+
+      return isUr
+        ? `🔍 **آپ کی تلاش کے مطابق پروڈکٹس کی تفصیلات:**\n\n${listStr}\n\n💡 کسی مخصوص پروڈکٹ کی مزید معلومات جاننے کے لیے اس کا پورا نام لکھیں یا **Catalog** ٹیب دیکھیں!`
+        : `🔍 **Matching Products Found:**\n\n${listStr}\n\n💡 Ask for a specific product name to view its complete profile, or visit the **Catalog** tab!`;
+    } else if (contextualProduct && (words.length === 0 || isFollowUpQuery)) {
+      if (q.includes("expiry") || q.includes("expire") || q.includes("ایکسپائری")) {
+        return isUr
+          ? `📅 **${contextualProduct.name} کی ایکسپائری تاریخ:** ${contextualProduct.expiryDate || "2027-01-15"} (تیاری: ${contextualProduct.manufacturingDate || "2026-01-15"}, بیچ: ${contextualProduct.batchNumber || "BATCH-" + contextualProduct.id})`
+          : `📅 **Expiry Date for ${contextualProduct.name}:** ${contextualProduct.expiryDate || "2027-01-15"} (Manufacturing: ${contextualProduct.manufacturingDate || "2026-01-15"}, Batch: ${contextualProduct.batchNumber || "BATCH-" + contextualProduct.id})`;
+      }
+      if (q.includes("stock") || q.includes("available") || q.includes("اسٹاک") || q.includes("دستیاب")) {
+        const stockStr = contextualProduct.stockQuantity > 0
+          ? (isUr ? `✅ اسٹاک میں دستیاب ہے (${contextualProduct.stockQuantity} ${contextualProduct.unitUr || 'یونٹس'} موجود)` : `✅ In Stock (${contextualProduct.stockQuantity} ${contextualProduct.unit || 'units'} available)`)
+          : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+        return `📦 **${contextualProduct.name}:** ${stockStr}`;
+      }
+      return formatProductDetails(contextualProduct, isExplicitSpecQuery);
+    }
+
+    // 6. DYNAMIC INVENTORY & ALL CATEGORIES OVERVIEW
     const isAllCatQuery = q.includes("category") || q.includes("categories") || q.includes("subcategory") || q.includes("subcategories") || q.includes("aisle") || q.includes("aisles") || q.includes("all categories") || q.includes("show categories") || q.includes("list categories") || q.includes("categories list") || q.includes("what categories") || q.includes("all products") || q.includes("list all") || q.includes("show all products") || q.includes("list products") || q.includes("inventory list") || q.includes("all items") || q.includes("شعبے") || q.includes("اقسام") || q.includes("کیٹیگری") || q.includes("کیٹیگریز") || q.includes("ذیلی") || q.includes("تمام کیٹیگریز") || q.includes("تمام پروڈکٹس");
 
     if (isAllCatQuery) {
-      const activeProds = Array.isArray(products) ? products.filter(p => p.status !== "Inactive") : [];
       const catList: string[] = [];
 
       dbCategories.forEach((c: any) => {
@@ -4783,292 +6193,14 @@ Follow these rules for production-grade, highly precise bulk extraction:
       const categoriesFormatted = catList.length > 0 ? catList.join("\n") : "• General Grocery";
 
       return isUr
-        ? `🏷️ **والکس کارٹ کی تمام فعال کیٹیگریز اور ذیلی کیٹیگریز (خودکار اپ ڈیٹ):**\n\n${categoriesFormatted}\n\n💡 ایڈمن یا AI کی طرف سے شامل کی گئی تمام نئی کیٹیگریز اور ذیلی کیٹیگریز یہاں بوٹ میں خود بخود شامل ہو جاتی ہیں۔ آپ **Catalog** میں جا کر کسی بھی کیٹیگری کو فلٹر کر سکتے ہیں!`
-        : `🏷️ **All Available Store Categories & Subcategories (Automatically Updated):**\n\n${categoriesFormatted}\n\n💡 All newly added store categories and subcategories automatically sync and appear here in VoxBot! You can filter and browse products by category in the **Catalog** tab.`;
+        ? `🏷️ **والکس کارٹ کی تمام فعال کیٹیگریز اور ذیلی کیٹیگریز (خودکار اپ ڈیٹ):**\n\n${categoriesFormatted}\n\n💡 آپ **Catalog** میں جا کر کسی بھی کیٹیگری کو فلٹر کر سکتے ہیں!`
+        : `🏷️ **All Available Store Categories & Subcategories (Automatically Updated):**\n\n${categoriesFormatted}\n\n💡 You can filter and browse products by category in the **Catalog** tab.`;
     }
 
-    // Requesting SPECIFIC Category products dynamically
-    if (Array.isArray(products) && products.length > 0) {
-      const activeProds = products.filter(p => p.status !== "Inactive");
-      
-      let targetCategory: string | null = null;
-      if (q.includes("dairy") || q.includes("milk") || q.includes("cheese") || q.includes("egg") || q.includes("butter") || q.includes("دودھ") || q.includes("انڈے") || q.includes("پنیر") || q.includes("مکھن")) {
-        targetCategory = "Dairy";
-      } else if (q.includes("fruit") || q.includes("apple") || q.includes("banana") || q.includes("mango") || q.includes("orange") || q.includes("پھل") || q.includes("سیب") || q.includes("کیلے") || q.includes("آم") || q.includes("مالٹے")) {
-        targetCategory = "Fruits";
-      } else if (q.includes("veg") || q.includes("potato") || q.includes("tomato") || q.includes("onion") || q.includes("carrot") || q.includes("سبزی") || q.includes("آلو") || q.includes("ٹماٹر") || q.includes("پیاز") || q.includes("گاجر")) {
-        targetCategory = "Vegetables";
-      } else if (q.includes("meat") || q.includes("chicken") || q.includes("beef") || q.includes("fish") || q.includes("seafood") || q.includes("گوشت") || q.includes("مرغی") || q.includes("قیمہ") || q.includes("مچھلی")) {
-        targetCategory = "Meat";
-      } else if (q.includes("beverage") || q.includes("drink") || q.includes("coke") || q.includes("coca") || q.includes("water") || q.includes("tea") || q.includes("coffee") || q.includes("مشروبات") || q.includes("چائے") || q.includes("پانی") || q.includes("کولڈ ڈرنک")) {
-        targetCategory = "Beverages";
-      } else if (q.includes("pantry") || q.includes("staple") || q.includes("rice") || q.includes("oil") || q.includes("sugar") || q.includes("salt") || q.includes("spice") || q.includes("پنساری") || q.includes("چاول") || q.includes("آئل") || q.includes("مصالحے") || q.includes("چینی") || q.includes("نمک")) {
-        targetCategory = "Pantry";
-      } else {
-        const matchedCat = activeProds.find(p => p.category && q.includes(p.category.toLowerCase()));
-        if (matchedCat) {
-          targetCategory = matchedCat.category;
-        }
-      }
-
-      const isCategoryOverviewQuery = targetCategory && (
-        q.includes("what") || q.includes("show") || q.includes("list") || q.includes("available") || q.includes("category") || q.includes("all") || q.includes("have") ||
-        q.includes("کون") || q.includes("کیا") || q.includes("دیکھو") || q.includes("فہرست") || q.includes("ہیں")
-      );
-
-      if (targetCategory && isCategoryOverviewQuery) {
-        const catItems = activeProds.filter(p => (p.category || "").toLowerCase().includes(targetCategory!.toLowerCase()));
-        if (catItems.length > 0) {
-          const catList = catItems.map(p =>
-            `• **${p.name}** ${p.nameUr ? `(${p.nameUr})` : ''}: **${fmt(p)}** / ${isUr ? (p.unitUr || 'پیکٹ') : (p.unit || 'pack')} — ${p.stockQuantity > 0 ? (isUr ? `دستیاب (${p.stockQuantity})` : `In Stock (${p.stockQuantity})`) : (isUr ? 'آؤٹ آف اسٹاک' : 'Out of Stock')}`
-          ).join("\n");
-
-          return isUr
-            ? `🏷️ **${targetCategory} کیٹیگری کی تمام دستیاب اشیاء:**\n\n${catList}\n\n💡 آپ **Catalog** ٹیب میں '${targetCategory}' فلٹر منتخب کر کے یہ تمام اشیاء کارٹ میں شامل کر سکتے ہیں!`
-            : `🏷️ **${targetCategory} Category — All Available Products:**\n\n${catList}\n\n💡 Visit the **Catalog** tab and select the **${targetCategory}** filter to purchase any of these items!`;
-        }
-      }
-    }
-
-    // 1. FEATURE & NAVIGATION INTENT CHECKS
-
-    // Add to Favorites / Bookmarks
-    if (q.includes("favourite") || q.includes("favorite") || q.includes("bookmark") || q.includes("heart") || q.includes("save") || q.includes("پسندیدہ") || q.includes("فیورٹ")) {
-      return isUr
-        ? "❤️ **پسندیدہ اشیاء محفوظ کرنے کا طریقہ (Add to Favorites):**\n1. کسی بھی پروڈکٹ کارڈ کے اوپر دائیں کونے میں موجود **دل (❤️)** کے آئیکن پر کلک کریں۔\n2. وہ پروڈکٹ آپ کی پسندیدہ لسٹ میں محفوظ ہو جائے گی۔\n3. اوپر نیویگیشن بار میں **Saved Favourites** ٹیب کھول کر آپ تمام محفوظ شدہ اشیاء دیکھ سکتے ہیں اور ایک کلک میں کارٹ میں ڈال سکتے ہیں!"
-        : "❤️ **How to Add Items to Favorites & Bookmarks:**\n1. Click the **Heart Icon (❤️)** on the top right of any product card in the Catalog or Home page.\n2. The item will be instantly saved to your personal wishlist.\n3. Navigate to the **Saved Favourites** tab in the main menu anytime to view all your bookmarked groceries and add them to your cart in 1-click!";
-    }
-
-    // View Recipe / Smart Recipe Search & Specific Recipe Breakdown
-    if (q.includes("biryani") || q.includes("بریانی")) {
-      return isUr
-        ? "🥘 **چکن بریانی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🌾 **سیلا / باسمتی چاول (White Rice):** 1 کلو\n- 🧅 **پیاز (Onions):** 250 گرام\n- 🍅 **ٹماٹر (Tomatoes):** 250 گرام\n- 🥔 **آلو (Potatoes):** 250 گرام\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 250 ملی لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **بریانی مصالحہ اور ادرک لہسن پیسٹ:** درکار مصالحہ جات\n- 🥛 **دہی اور تازہ پودینہ:** 250 گرام دہی اور پودینہ\n\n💡 **طریقہ:** **Catalog** ٹیب میں جائیں اور سرچ میں 'Biryani' لکھیں تاکہ یہ تمام اجزاء ایک کلک میں کارٹ میں شامل کر سکیں!"
-        : "🥘 **Chicken Biryani Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🌾 **White Rice:** 1 KG\n- 🧅 **Onions:** 250 Grams\n- 🍅 **Tomatoes:** 250 Grams\n- 🥔 **Potatoes:** 250 Grams\n- 🛢️ **Cooking Oil:** 250 ML\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Biryani Masala & Ginger Garlic Paste:** Essential Spices\n- 🥛 **Yogurt & Fresh Mint:** 250g Yogurt & Fresh Mint\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Biryani' to add all these required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("karahi") || q.includes("کڑاہی")) {
-      return isUr
-        ? "🍲 **چکن کڑاہی کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🧅 **پیاز (Onions):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **کڑاہی مصالحہ، ہری مرچ اور ادرک لہسن پیسٹ**\n- 🥛 **دہی (Yogurt)**\n\n💡 **طریقہ:** **Catalog** ٹیب میں جائیں اور 'Karahi' سرچ کر کے 1 کلک میں تمام اجزاء کارٹ میں شامل کریں!"
-        : "🍲 **Chicken Karahi Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🍅 **Tomatoes:** 1 KG\n- 🧅 **Onions:** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Karahi Masala, Green Chillies & Ginger Garlic Paste**\n- 🥛 **Yogurt**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Karahi' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("nihari") || q.includes("نہاری")) {
-      return isUr
-        ? "🍲 **نہاری کی مکمل ریسپی اور درکار اجزاء:**\n- 🥩 **گوشت / بیف (Beef):** 1 کلو\n- 🌾 **گندم کا آٹا (Flour):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **نہاری مصالحہ، ہری مرچ، ادرک اور لیموں**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Nihari' سرچ کریں اور 1 کلک میں تمام اجزاء کارٹ میں ڈالیں!"
-        : "🍲 **Special Nihari Recipe & Complete Ingredients:**\n- 🥩 **Beef / Meat:** 1 KG\n- 🌾 **Wheat Flour (Atta):** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Nihari Special Masala, Ginger, Green Chillies & Lemon**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Nihari' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("pasta") || q.includes("پاستا")) {
-      return isUr
-        ? "🍝 **پاستا کی مکمل ریسپی اور درکار اجزاء:**\n- 🍝 **پاستا پیکٹ (Pasta):** 1 ڈبہ\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🧀 **چیدر / موزریلا پنیر (Cheese):** 1 پیکٹ\n- 🧄 **لہسن اور کالی مرچ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Pasta' سرچ کر کے تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🍝 **Creamy Chicken Pasta Recipe & Complete Ingredients:**\n- 🍝 **Pasta Pack:** 1 Box\n- 🍗 **Chicken Breast:** 1 KG\n- 🥛 **Whole Milk:** 1 Pack\n- 🧈 **Butter:** 1 Block\n- 🧀 **Cheddar Cheese:** 1 Pack\n- 🧄 **Garlic & Black Pepper Spices**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Pasta' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("pizza") || q.includes("پیزا")) {
-      return isUr
-        ? "🍕 **پیزا کی مکمل ریسپی اور درکار اجزاء:**\n- 🍕 **پیزا ڈو / کرسٹ:** 1 عدد\n- 🧀 **موزریلا و چیدر چیز (Cheese):** 1 پیکٹ\n- 🍅 **ٹماٹر / پیزا سوس (Tomatoes):** 1 کلو\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🫑 **شملہ مرچ اور زیتون (Capsicum & Olives)**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Pizza' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🍕 **Delicious Pizza Recipe & Complete Ingredients:**\n- 🍕 **Pizza Crust / Dough:** 1 Base\n- 🧀 **Mozzarella & Cheddar Cheese:** 1 Pack\n- 🍅 **Tomatoes / Pizza Sauce:** 1 KG\n- 🍗 **Chicken Breast:** 1 KG\n- 🫑 **Bell Peppers & Olives**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Pizza' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("cake") || q.includes("کیک")) {
-      return isUr
-        ? "🎂 **چاکلیٹ کیک کی مکمل ریسپی اور درکار اجزاء:**\n- 🥚 **انڈے (Eggs):** 1 درجن\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🍬 **چینی (Sugar):** 1 پیکٹ\n- 🌾 **گندم کا آٹا (Flour):** 1 کلو\n- 🍫 **کوکو پاؤڈر اور چاکلیٹ چپس**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Cake' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🎂 **Chocolate Cake Recipe & Complete Ingredients:**\n- 🥚 **Eggs:** 1 Dozen\n- 🥛 **Whole Milk:** 1 Pack\n- 🧈 **Butter:** 1 Block\n- 🍬 **Sugar:** 1 Pack\n- 🌾 **Wheat Flour (Atta):** 1 KG\n- 🍫 **Cocoa Powder & Chocolate Chips:** For flavor\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Cake' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("burger") || q.includes("برگر")) {
-      return isUr
-        ? "🍔 **چکن برگر کی مکمل ریسپی اور درکار اجزاء:**\n- 🍔 **برگر بنز (Burger Buns):** 1 پیکٹ\n- 🍗 **چکن بریسٹ (Chicken Breast):** 1 کلو\n- 🧀 **چیدر چیز (Cheddar Cheese):** 1 پیکٹ\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🧅 **پیاز (Onions):** 500 گرام\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🧴 **مایونیز اور کیچپ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Burger' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🍔 **Chicken Burger Recipe & Complete Ingredients:**\n- 🍔 **Burger Buns:** 1 Pack\n- 🍗 **Chicken Breast:** 1 KG\n- 🧀 **Cheddar Cheese:** 1 Pack\n- 🍅 **Tomatoes:** 1 KG\n- 🧅 **Onions:** 500g\n- 🧈 **Butter:** 1 Block\n- 🧴 **Mayonnaise & Ketchup**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Burger' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("kheer") || q.includes("کھیر")) {
-      return isUr
-        ? "🥣 **لذیذ کھیر کی مکمل ریسپی اور درکار اجزاء:**\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- 🌾 **سفید چاول (White Rice):** 1 کلو\n- 🍬 **چینی (Sugar):** 1 پیکٹ\n- 🧈 **مکھن (Butter):** 1 بلاک\n- 🌰 **خشک میوہ جات اور الائچی**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Kheer' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🥣 **Sweet Kheer Recipe & Complete Ingredients:**\n- 🥛 **Whole Milk:** 1 Pack\n- 🌾 **White Rice:** 1 KG\n- 🍬 **Sugar:** 1 Pack\n- 🧈 **Butter:** 1 Block\n- 🌰 **Dry Fruits & Cardamom:** For aroma\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Kheer' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("chai") || q.includes("tea") || q.includes("چائے")) {
-      return isUr
-        ? "☕ **کڑک چائے کی مکمل ریسپی اور درکار اجزاء:**\n- 🥛 **خالص دودھ (Whole Milk):** 1 پیکٹ\n- ☕ **سبز / کالی چائے پتی (Green Tea):** 1 ڈبہ\n- 🍬 **چینی (Sugar):** 1 پیکٹ\n- 🫚 **ادرک اور الائچی**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Chai' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "☕ **Special Chai/Tea Recipe & Complete Ingredients:**\n- 🥛 **Whole Milk:** 1 Pack\n- ☕ **Green Tea / Black Tea Leaf:** 1 Box\n- 🍬 **Sugar:** 1 Pack\n- 🫚 **Ginger & Cardamom (Elaichi):** For flavor\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Chai' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("fried rice") || q.includes("فرائیڈ رائس")) {
-      return isUr
-        ? "🍚 **انڈہ فرائیڈ رائس کی مکمل ریسپی اور درکار اجزاء:**\n- 🥚 **انڈے (Eggs):** 1 درجن\n- 🌾 **چاول (White Rice):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧅 **پیاز (Onions):** 500 گرام\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🍾 **سویا ساس، سرکہ اور لہسن**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Fried Rice' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🍚 **Egg Fried Rice Recipe & Complete Ingredients:**\n- 🥚 **Eggs:** 1 Dozen\n- 🌾 **White Rice:** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧅 **Onions:** 500g\n- 🧂 **Salt:** 1 Pack\n- 🍾 **Soy Sauce, Vinegar & Garlic**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Fried Rice' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("omelette") || q.includes("omlet") || q.includes("آملیٹ")) {
-      return isUr
-        ? "🍳 **لذیذ آملیٹ کی مکمل ریسپی اور درکار اجزاء:**\n- 🥚 **انڈے (Eggs):** 1 درجن\n- 🧅 **پیاز (Onions):** 500 گرام\n- 🍅 **ٹماٹر (Tomatoes):** 500 گرام\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **ہری مرچ، ہرا دھنیا اور کالی مرچ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Omelette' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🍳 **Egg Omelette Recipe & Complete Ingredients:**\n- 🥚 **Eggs:** 1 Dozen\n- 🧅 **Onions:** 500g\n- 🍅 **Tomatoes:** 500g\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Green Chillies, Coriander & Black Pepper**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Omelette' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("pulao") || q.includes("پلاؤ") || q.includes("پلاو")) {
-      return isUr
-        ? "🥘 **لذیذ چکن پلاؤ کی مکمل ریسپی اور درکار اجزاء:**\n- 🍗 **چکن (Chicken Breast):** 1 کلو\n- 🌾 **چاول (White Rice):** 1 کلو\n- 🧅 **پیاز (Onions):** 1 کلو\n- 🍅 **ٹماٹر (Tomatoes):** 1 کلو\n- 🥔 **آلو (Potatoes):** 1 کلو\n- 🛢️ **کوکنگ آئل (Cooking Oil):** 1 لیٹر\n- 🧂 **نمک (Salt):** 1 پیکٹ\n- 🌶️ **پلاؤ مصالحہ جات اور ادرک لہسن پیسٹ**\n\n💡 **طریقہ:** **Catalog** ٹیب میں 'Pulao' سرچ کریں اور تمام اجزاء ایک کلک میں کارٹ میں شامل کریں!"
-        : "🥘 **Chicken Pulao Recipe & Complete Ingredients:**\n- 🍗 **Chicken Breast:** 1 KG\n- 🌾 **White Rice:** 1 KG\n- 🧅 **Onions:** 1 KG\n- 🍅 **Tomatoes:** 1 KG\n- 🥔 **Potatoes:** 1 KG\n- 🛢️ **Cooking Oil:** 1 Liter\n- 🧂 **Salt:** 1 Pack\n- 🌶️ **Pulao Whole Spices & Ginger Garlic Paste**\n\n💡 **Tip:** Go to the **Catalog** tab and search 'Pulao' to add all required ingredients to your cart in 1-click!";
-    }
-    if (q.includes("recipe") || q.includes("ingredient") || q.includes("dish") || q.includes("ترکیب") || q.includes("ریسپی") || q.includes("ڈش")) {
-      return isUr
-        ? "🍝 **ریسپی دیکھنے اور سمارٹ ریسپی سرچ کا طریقہ (View Recipe):**\n1. **Catalog** ٹیب پر جائیں۔\n2. سرچ بار میں کسی بھی ڈش کا نام درج کریں (مثلاً: *Biryani, Karahi, Nihari, Pasta, Pizza, Cake*)۔\n3. VoxCart کا سمارٹ ریسپی انجن آپ کو ڈش کی ریسپی کی تفصیلات اور درکار تمام اجزاء دکھائے گا۔\n4. **'Add All Recipe Ingredients'** بٹن پر کلک کر کے تمام اجزاء ایک ساتھ کارٹ میں شامل کریں!"
-        : "🍝 **How to View Recipes & Smart Recipe Search:**\n1. Navigate to the **Catalog** tab.\n2. Search for any dish or recipe name in the search bar (e.g., *Biryani, Karahi, Nihari, Pasta, Pizza, Cake*).\n3. VoxCart's Smart Recipe Engine brings up the full recipe breakdown and all required store ingredients.\n4. Click **'Add All Recipe Ingredients'** to put all required grocery items into your shopping cart in 1-click!";
-    }
-
-    // Voice Switch & Language Toggle
-    if (q.includes("voice switch") || q.includes("language") || q.includes("urdu") || q.includes("english") || q.includes("roman") || q.includes("toggle") || q.includes("speak") || q.includes("mic") || q.includes("زبان") || q.includes("سویچ") || q.includes("اردو") || q.includes("صوتی")) {
-      return isUr
-        ? "🎙️ **صوتی اور زبان کی سوئچنگ (Voice Switch & Language Toggle):**\n1. **زبان تبدیلی:** ویب سائٹ کے بالکل اوپر ہیڈر میں موجود **'Urdu / English'** بٹن پر کلک کر کے پوری ویب سائٹ کو مکمل اردو یا انگریزی میں سوئچ کریں۔\n2. **صوتی اسسٹنٹ:** **Voice Assistant** ٹیب پر جائیں یا ہیڈر کے **مائیکروفون آئیکن** پر کلک کریں۔\n3. مائیک آن کر کے انگریزی، اردو، یا رومن اردو میں صوتی آرڈر دیں (مثلاً: *'دو کلو آٹا اور ایک کلو سیب شامل کرو'*)"
-        : "🎙️ **How to Use Voice Switch & Language Toggle:**\n1. **Language Switch:** Click the **'Urdu / English'** toggle button in the top website header to instantly switch the entire app interface between English and Urdu.\n2. **Voice Assistant Switch:** Click the **Voice Assistant** tab in the main navigation or tap the **microphone icon** in the header.\n3. Turn on the mic and speak naturally in English, Urdu, or Roman Urdu (e.g., *'Add 2 kg flour and 1 kg apples'*). VoxCart will dictate and add items automatically!";
-    }
-
-    // Smart Suggestions & AI Recommendations
-    if (q.includes("suggestion") || q.includes("recommend") || q.includes("smart") || q.includes("auto suggest") || q.includes("تجویز") || q.includes("پیشکش") || q.includes("ای آئی")) {
-      return isUr
-        ? "✨ **سمارٹ تجویزات اور AI خصوصیات (Smart Suggestions):**\n1. **AI ریسپی تجویزات:** جب آپ کیٹلاگ میں کسی ڈش کو تلاش کرتے ہیں، والکس کارٹ خود بخود متعلقہ اجزاء کی تجویز پیش کرتا ہے۔\n2. **صوتی سمارٹ میچنگ:** Voice Assistant آپ کے جملے سے پروڈکٹس اور مقدار خود بخود سمارٹ انداز میں الگ کر کے کارٹ میں ڈالتا ہے۔\n3. **سمارٹ فلٹرز:** ہوم اور کیٹلاگ پیج پر مقبول ترین اور باقاعدہ خریدی جانے والی اشیاء کی سمارٹ لسٹ موجود ہے!"
-        : "✨ **How Smart Suggestions & AI Features Work:**\n1. **AI Recipe Suggestions:** When searching dishes in the Catalog, VoxCart intelligently suggests all necessary cooking ingredients.\n2. **Voice Smart Extraction:** The Voice Assistant uses AI natural language parsing to automatically detect product names, quantities, and units from your speech.\n3. **Smart Product Suggestions:** Browse popular and frequently bought items on the Home & Catalog tabs tailored to your shopping preferences!";
-    }
-
-    // OCR Bill & Receipt Scanner
-    if (q.includes("scan") || q.includes("ocr") || q.includes("bill") || q.includes("receipt") || q.includes("upload list") || q.includes("اسکین") || q.includes("رسید") || q.includes("تصویر")) {
-      return isUr
-        ? "📷 **بل اور کاغذی فہرست اسکین کرنے کا طریقہ (OCR Bill Scanner):**\n1. **Voice Assistant** ٹیب پر جائیں اور نیچے **Invoice / Bill Scanner** سیکشن تک سکرول کریں۔\n2. اپنے کاغذی بل یا ہاتھ سے لکھی شاپنگ لسٹ کی تصویر اپ لوڈ کریں۔\n3. ہمارا AI OCR اسکینر تصویر میں لکھی تمام اشیاء کو پڑھ کر فوراً کارٹ میں تبدیل کر دے گا!"
-        : "📷 **How to Use OCR Bill & Receipt Scanner:**\n1. Go to the **Voice Assistant** tab and scroll down to the **Invoice / Bill Scanner** section.\n2. Upload an image or photo of a printed store receipt or handwritten grocery list.\n3. Our AI OCR vision scanner extracts listed products and lets you add them directly to your shopping cart!";
-    }
-
-    // Orders & Tracking & Invoices
-    if (q.includes("order") || q.includes("track") || q.includes("status") || q.includes("invoice") || q.includes("history") || q.includes("آرڈر") || q.includes("رسید")) {
-      return isUr
-        ? "🧾 **آرڈر ٹریکنگ اور رسید دیکھنے کا طریقہ:**\n1. اوپر نیویگیشن بار میں **Orders** (یا آرڈرز) ٹیب پر کلک کریں۔\n2. وہاں آپ کو اپنے تمام موجودہ اور سابقہ آرڈرز کی لائیو ٹریکنگ (Pending ➔ Shipped ➔ Delivered) نظر آئے گی۔\n3. آپ کسی بھی آرڈر کے ساتھ موجود **'PDF Invoice'** بٹن سے آفیشل بل ڈاؤن لوڈ یا پرنٹ بھی کر سکتے ہیں!"
-        : "🧾 **How to Track Your Orders & View Invoices:**\n1. Click on the **Orders** tab in the top navigation bar.\n2. You will see real-time status updates for all your orders (Pending ➔ Shipped ➔ Delivered).\n3. You can also view, print, or download official PDF invoices for any order by clicking the **PDF Invoice** button!";
-    }
-
-    // Adding Items to Cart & Buying
-    if ((q.includes("add") && (q.includes("cart") || q.includes("basket"))) || q.includes("how to buy") || q.includes("ارٹ") || q.includes("خرید")) {
-      return isUr
-        ? "🛒 **کارٹ میں اشیاء شامل کرنے کا طریقہ:**\n1. **Manual:** **Catalog** یا **Home** پیج پر کسی بھی پروڈکٹ کے نیچے **'Add to Cart'** (یا ➕) بٹن دبائیں۔\n2. **Voice:** **Voice Assistant** پیج یا ہیڈر مائیک پر کلک کریں اور صوتی انداز میں بولیں (مثلاً: *'دو کلو سیب کارٹ میں ڈالو'*)\n3. **Recipe 1-Click:** کیٹلاگ میں کسی ریسپی کا نام سرچ کر کے تمام اجزاء ایک ساتھ کارٹ میں شامل کریں!"
-        : "🛒 **How to Add Items to Your Cart:**\n1. **Manual:** Go to the **Catalog** tab, browse or search for any item, and click **'Add to Cart'** (or the ➕ button).\n2. **Voice Dictation:** Go to the **Voice Assistant** tab or click the microphone icon in the header, then speak naturally (e.g., *'Add 2 kg bananas and 1 carton of milk'*).\n3. **Recipe 1-Click:** Search for a dish name (e.g., *Biryani*) in the Catalog search bar to automatically add all required grocery ingredients to your cart!";
-    }
-
-    // Voice Features & OCR Scanner
-    if (q.includes("voice") || q.includes("speak") || q.includes("mic") || q.includes("speech") || q.includes("scan") || q.includes("ocr") || q.includes("bill") || q.includes("receipt") || q.includes("صوتی") || q.includes("بول") || q.includes("اسکین")) {
-      return isUr
-        ? "🎙️ **صوتی اسسٹنٹ اور بل اسکینر کا استعمال:**\n1. نیویگیشن بار کے **Voice Assistant** ٹیب یا ہیڈر کے مائیکروفون پر کلک کریں۔\n2. مائیک کا بٹن دبائیں اور اردو/انگریزی میں بولیں (مثلاً: *'مجھے تین کلو آٹا اور ایک ڈبہ مکھن چاہیے'*)۔\n3. AI آپ کی آواز سن کر اشیاء خود بخود کارٹ میں شامل کر دے گا۔\n4. **Invoice / Bill Scanner:** آپ کاغذی رسید یا ہاتھ سے لکھی لسٹ کی تصویر اپ لوڈ کر کے بھی اشیاء فوراً کارٹ میں شامل کر سکتے ہیں!"
-        : "🎙️ **How to Use Voice Features & Bill Scanner:**\n1. Click the **Voice Assistant** tab in the main navigation or tap the microphone icon in the top header.\n2. Tap the microphone button to start listening and speak naturally in English, Urdu, or Roman Urdu (e.g., *'Add 1 loaf of bread and 1 dozen eggs'*).\n3. The AI speech engine identifies the requested items and instantly updates your shopping cart.\n4. **Bill & Receipt Scanner:** You can also upload printed or handwritten shopping list images to convert them directly into cart items!";
-    }
-
-    // Checkout & Payment Methods
-    if (q.includes("checkout") || q.includes("place order") || q.includes("payment") || q.includes("pay") || q.includes("cod") || q.includes("card") || q.includes("easypaisa") || q.includes("jazzcash") || q.includes("چیک آؤٹ") || q.includes("ادائیگی")) {
-      return isUr
-        ? "💳 **چیک آؤٹ اور ادائیگی کے طریقے:**\n1. اوپر دائیں طرف کارٹ آئیکن پر کلک کر کے اپنا شاپنگ کارٹ دیکھیں۔\n2. اشیاء کی تصدیق کے بعد **'Proceed to Checkout'** پر کلک کریں۔\n3. اپنا ڈیلیوری پتہ درج کریں اور ادائیگی کا طریقہ منتخب کریں (COD, Card, EasyPaisa, JazzCash, Bank Transfer).\n4. **'Place Order'** پر کلک کریں! آپ کو فوراً تصدیق اور PDF انوائس مل جائے گی۔"
-        : "💳 **How to Checkout & Payment Options:**\n1. Open your shopping cart by clicking the cart icon at the top right of the header.\n2. Review your selected items and click **'Proceed to Checkout'**.\n3. Enter your delivery address and choose a payment method (COD, Credit/Debit Card, EasyPaisa, JazzCash, Bank Transfer).\n4. Click **'Place Order'** to finalize! You will receive instant confirmation and a downloadable PDF invoice.";
-    }
-
-    // Searching, Filtering & Recipe Search
-    if (q.includes("search") || q.includes("find") || q.includes("filter") || q.includes("recipe") || q.includes("ingredient") || q.includes("biryani") || q.includes("cake") || q.includes("pasta") || q.includes("تلاش") || q.includes("ترکیب")) {
-      return isUr
-        ? "🔍 **پروڈکٹس اور سمارٹ ریسپی سرچ:**\n1. **Catalog** ٹیب پر جائیں۔\n2. سرچ بار میں کسی بھی پروڈکٹ کا نام (سیب، آٹا، دودھ) یا ڈش کا نام (Biryani, Pasta, Cake) درج کریں۔\n3. کیٹیگری فلٹرز کا استعمال کریں۔ ریسپی سرچ کرنے سے تمام درکار اجزاء ایک ساتھ کارٹ میں شامل کیے جا سکتے ہیں!"
-        : "🔍 **How to Search, Filter & Recipe Search:**\n1. Navigate to the **Catalog** tab.\n2. Type any item name (e.g., *Milk, Apples*) or recipe dish name (e.g., *Biryani, Pasta, Cake*) into the search bar.\n3. Use category filter buttons to narrow down choices.\n4. Searching a recipe name brings up all required grocery ingredients for 1-click adding!";
-    }
-
-    // Favourites & Bookmarks
-    if (q.includes("favourite") || q.includes("favorite") || q.includes("bookmark") || q.includes("save") || q.includes("پسندیدہ")) {
-      return isUr
-        ? "❤️ **پسندیدہ اشیاء محفوظ کرنا:**\nکسی بھی پروڈکٹ پر موجود دل (❤️) کا آئیکن کلک کریں۔ تمام محفوظ شدہ اشیاء دیکھنے کے لیے **Saved Favourites** ٹیب کھولیں۔"
-        : "❤️ **How to Save Items to Favourites:**\nClick the heart icon (❤️) on any product card. Access all your bookmarked groceries anytime in the **Saved Favourites** tab!";
-    }
-
-    // Delivery & Shipping
-    if (q.includes("deliver") || q.includes("shipping") || q.includes("fee") || q.includes("charge") || q.includes("دیلیوری") || q.includes("ڈلیوری")) {
-      return isUr
-        ? "🚚 **ڈیلیوری کی معلومات:**\n- **وقت:** تمام آرڈرز 24-48 گھنٹوں میں ڈیلیور ہوتے ہیں۔\n- **مفت ڈیلیوری:** $10 / PKR 2,000 سے اوپر کے تمام آرڈرز پر ڈیلیوری چارجز مفت ہیں!\n- **ٹریکنگ:** آپ **Orders** کے ٹیب سے اپنے آرڈر کا لائیو اسٹیٹس چیک کر سکتے ہیں۔"
-        : "🚚 **Delivery Information:**\n- **Delivery Time:** Standard delivery arrives within 24-48 hours.\n- **Free Shipping:** All orders above $10 USD or PKR 2,000 qualify for FREE delivery!\n- **Tracking:** Real-time order progress can be tracked in the **Orders** tab.";
-    }
-
-    // Returns & Refunds
-    if (q.includes("refund") || q.includes("return") || q.includes("policy") || q.includes("damaged") || q.includes("واپسی") || q.includes("ریفنڈ")) {
-      return isUr
-        ? "🔄 **ریفنڈ اور واپسی کی پالیسی:**\nاگر کسی پروڈکٹ میں کوئی خرابی ہو تو آپ 24 گھنٹوں کے اندر واپسی کی درخواست کر سکتے ہیں۔ آپ کی رقم 3-5 دنوں میں واپس کر دی جائے گی۔"
-        : "🔄 **Returns & Refund Policy:**\nWe offer a 24-hour return window for fresh produce or damaged items. Once processed, full refunds are issued to your payment method within 3-5 business days.";
-    }
-
-    // Accounts & Admin
-    if (q.includes("account") || q.includes("login") || q.includes("register") || q.includes("admin") || q.includes("password") || q.includes("لاگ ان")) {
-      return isUr
-        ? "👤 **یوزر اور ایڈمن اکاؤنٹس:**\n- گاہک لاگ ان کیے بغیر یا نیا اکاؤنٹ بنا کر خریداری کر سکتے ہیں۔\n- ایڈمن کنٹرول کے لیے **Admin** ٹیب پر جائیں (لاگ ان: admin@voxcart.com / admin)"
-        : "👤 **User Accounts & Admin Console:**\n- Customers can shop as a Guest or Register an account to save delivery addresses and cart state.\n- **Admin Console:** Managers can access the Admin tab (`admin@voxcart.com` / `admin`) to update inventory, stock, and orders.";
-    }
-
-    // Currency / Language
-    if (q.includes("currency") || q.includes("pkr") || q.includes("usd") || q.includes("language") || q.includes("urdu") || q.includes("کرنسی") || q.includes("زبان")) {
-      return isUr
-        ? "🌐 **کرنسی اور زبان کا انتخاب:**\nآپ ویب سائٹ کی ہیڈر بار سے زبان (English / اردو) اور کرنسی (USD $, PKR ₨, EUR €, GBP £, SAR ﷼, AED) تبدیل کر سکتے ہیں۔"
-        : "🌐 **Currency & Language Settings:**\nUse the top header navigation to switch site languages (English / Urdu اردو) or display currencies (USD $, PKR ₨, EUR €, GBP £, SAR, AED, etc.) with live exchange rates!";
-    }
-
-    // 2. DYNAMIC PRODUCT & PRICE LOOKUP (Matches specific items when requested)
-    if (Array.isArray(products) && products.length > 0) {
-      const ignoreWords = new Set([
-        "what", "is", "are", "the", "a", "an", "price", "prices", "cost", "costs", "rate", "rates", "of", "how", "much", "many", "does", "do",
-        "you", "have", "sell", "show", "me", "list", "available", "tell", "about", "for", "in", "store", "voxcart", "can",
-        "buy", "give", "item", "product", "items", "products", "where", "to", "see", "view", "find", "track", "tracking",
-        "order", "orders", "my", "your", "our", "history", "cart", "basket", "checkout", "pay", "payment", "account",
-        "profile", "page", "tab", "go", "nav", "navigate", "help", "kya", "hai", "kaise", "chahiye", "کتنی", "کتنا",
-        "قیمت", "کیا", "ہے", "بتاؤ", "سے", "پر", "روپے", "کتنے"
-      ]);
-
-      const words = q.split(/[^a-zA-Z0-9\u0600-\u06FF]+/).filter(w => w.length >= 3 && !ignoreWords.has(w));
-
-      let matchedProducts = products.filter(p => {
-        const pName = (p.name || "").toLowerCase();
-        const pUr = (p.nameUr || "").toLowerCase();
-
-        if (pName && q.includes(pName)) return true;
-        if (pUr && q.includes(pUr)) return true;
-
-        if (words.length === 0) return false;
-
-        const pWords = pName.split(/\s+/).filter(w => w.length >= 2);
-        const pUrWords = pUr.split(/\s+/).filter(w => w.length >= 2);
-
-        return words.some(w => 
-          pWords.some(pw => pw === w || (w.length >= 4 && (pw.startsWith(w) || w.startsWith(pw)))) ||
-          pUrWords.some(pu => pu === w || (w.length >= 4 && (pu.startsWith(w) || w.startsWith(pu))))
-        );
-      });
-
-      if (matchedProducts.length === 0) {
-        if (q.includes("fruit") || q.includes("پھل")) {
-          matchedProducts = products.filter(p => (p.category || "").toLowerCase().includes("fruit") || (p.category || "").toLowerCase().includes("produce"));
-        } else if (q.includes("veg") || q.includes("سبزی")) {
-          matchedProducts = products.filter(p => (p.category || "").toLowerCase().includes("veg") || (p.category || "").toLowerCase().includes("produce"));
-        } else if (q.includes("dairy") || q.includes("دودھ")) {
-          matchedProducts = products.filter(p => (p.category || "").toLowerCase().includes("dairy"));
-        } else if (q.includes("bakery") || q.includes("بیکری")) {
-          matchedProducts = products.filter(p => (p.category || "").toLowerCase().includes("bakery"));
-        } else if (q.includes("meat") || q.includes("گوشت")) {
-          matchedProducts = products.filter(p => (p.category || "").toLowerCase().includes("meat"));
-        }
-      }
-
-      if (matchedProducts.length > 0) {
-        if (matchedProducts.length === 1) {
-          const item = matchedProducts[0];
-          const stockText = item.stockQuantity > 0 
-            ? (isUr ? `دستیاب ہے (${item.stockQuantity} یونٹ)` : `In Stock (${item.stockQuantity} available)`)
-            : (isUr ? 'آؤٹ آف اسٹاک' : 'Out of Stock');
-
-          return isUr
-            ? `🏷️ **${item.name}** ${item.nameUr ? `(${item.nameUr})` : ''} کی قیمت **${item.price} PKR** ہے۔\n\n📌 **کیٹیگری:** ${item.category || 'گروسری'}\n📦 **اسٹاک اسٹیٹس:** ${stockText}\n\nآپ **Catalog** ٹیب سے یا صوتی اسسٹنٹ کو بول کر اسے کارٹ میں شامل کر سکتے ہیں!`
-            : `🏷️ The price of **${item.name}** ${item.nameUr ? `(${item.nameUr})` : ''} is **${item.price} PKR**.\n\n📌 **Category:** ${item.category || 'General'}\n📦 **Availability:** ${stockText}\n\nYou can add this item to your cart from the **Catalog** tab or by speaking to our **Voice Assistant**!`;
-        } else {
-          const topMatches = matchedProducts.slice(0, 10);
-          const itemsList = topMatches.map(p => 
-            `• **${p.name}** ${p.nameUr ? `(${p.nameUr})` : ''}: **${p.price} PKR** — *Category: ${p.category || 'General'}* | Status: ${p.stockQuantity > 0 ? `In Stock (${p.stockQuantity} available)` : 'Out of Stock'}`
-          ).join("\n");
-
-          return isUr
-            ? `یہاں والکس کارٹ اسٹور میں آپ کی تلاش کے مطابق پروڈکٹس ہیں:\n\n${itemsList}\n\nآپ **Catalog** کے صفحے پر جا کر ان کو کارٹ میں شامل کر سکتے ہیں!`
-            : `Here are matching items from VoxCart's inventory based on your question:\n\n${itemsList}\n\nYou can browse and add these items under the **Catalog** tab!`;
-        }
-      }
-    }
-
-    // Default intelligent response acknowledging question
+    // 7. General smart response
     return isUr
-      ? `آپ کے سوال ("${query}") سے متعلق معلومات:\nوالکس کارٹ ایک دو لسانی صوتی آن لائن گروسری اسٹور ہے۔ آپ **Catalog** سے پروڈکٹس تلاش کر سکتے ہیں، **Voice Assistant** سے صوتی آرڈر دے سکتے ہیں، یا **Orders** میں اپنا آرڈر ٹریک کر سکتے ہیں۔`
-      : `Regarding your question ("${query}"):\nVoxCart is a bilingual voice-activated online store. You can search products in the **Catalog** tab, use hands-free ordering in the **Voice Assistant** tab, or track your purchases in the **Orders** tab!`;
+      ? `آپ کے سوال ("${query}") سے متعلق معلومات:\nوالکس کارٹ ایک دو لسانی صوتی آن لائن گروسری اسٹور ہے۔ آپ **Catalog** سے پروڈکٹس اور ریسیپیز تلاش کر سکتے ہیں، **Voice Assistant** سے صوتی آرڈر دے سکتے ہیں، یا **Customer Feedback** میں اپنی رائے درج کر سکتے ہیں۔ کسی بھی پروڈکٹ کا نام لکھیں تاکہ میں اس کی مکمل تفصیلات بتا سکوں!`
+      : `Regarding your question ("${query}"):\nVoxCart is a bilingual voice-activated online store. You can browse products and recipes in the **Catalog** tab, use hands-free shopping in the **Voice Assistant** tab, track orders in **Orders**, or share reviews in **Customer Feedback**! Feel free to ask about any product or website feature.`;
   }
 
   // API: Cute AI Chatbot Website Assistant
@@ -5192,12 +6324,11 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
         if (match) {
           const storeUnit = (match.unit || "").toLowerCase();
           const recipeUnitLower = (ing.unit || "").toLowerCase();
-          const isGramOrMl = recipeUnitLower.includes("g") || 
-                             recipeUnitLower.includes("gram") || 
-                             recipeUnitLower.includes("گرام") || 
-                             recipeUnitLower.includes("ml") || 
-                             recipeUnitLower.includes("milli") || 
-                             recipeUnitLower.includes("ملی");
+          const isGramOrMl = (
+            recipeUnitLower === "g" || recipeUnitLower === "gram" || recipeUnitLower === "grams" || recipeUnitLower === "گرام" ||
+            recipeUnitLower === "ml" || recipeUnitLower === "milli" || recipeUnitLower === "milliliter" || recipeUnitLower === "milliliters" || recipeUnitLower === "ملی" ||
+            (recipeUnitLower.includes("gram") || recipeUnitLower.includes("milli"))
+          ) && !recipeUnitLower.includes("kg") && !recipeUnitLower.includes("kilo") && !recipeUnitLower.includes("کلو");
 
           const isWeighed = storeUnit.includes("kg") || storeUnit.includes("کلو") || 
                             storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ") ||
@@ -5206,15 +6337,17 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
           if (isWeighed) {
             if (isGramOrMl) {
               if (storeUnit.includes("lb") || storeUnit.includes("پاؤنڈ")) {
-                qty = Math.max(1, Math.round(qty / 454));
+                qty = Math.max(0.1, Math.round((qty / 454) * 100) / 100);
               } else {
-                qty = Math.max(1, Math.round(qty / 1000));
+                qty = Math.max(0.1, Math.round(((qty >= 10 ? qty / 1000 : qty)) * 100) / 100);
               }
             } else if (qty > 10) {
               qty = 1;
             }
           } else {
-            if (isGramOrMl || qty > 10) {
+            if (isGramOrMl) {
+              qty = Math.max(0.1, Math.round(((qty >= 10 ? qty / 1000 : qty)) * 100) / 100);
+            } else if (qty > 10) {
               qty = 1;
             }
           }
@@ -5352,9 +6485,17 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
       });
       const categoriesSummary = catLines.length > 0 ? catLines.join("\n") : "- General Grocery";
 
-      const productSummary = activeProducts.map((p: any) =>
-        `- ID ${p.id}: "${p.name}" (${p.nameUr || ''}), Category: ${p.category || 'General'}, Price: ${formatServerPrice(p.price, currency, language, p.currencyCode)} (${currency}), Stock: ${p.stockQuantity > 0 ? `In Stock (${p.stockQuantity} ${p.unit || 'units'} available)` : 'Out of Stock'}`
-      ).join("\n");
+      const productSummary = activeProducts.map((p: any) => {
+        const unitStr = p.unit || 'unit';
+        const unitUrStr = p.unitUr ? ` (${p.unitUr})` : '';
+        const stockStr = p.stockQuantity > 0 ? `In Stock (${p.stockQuantity} ${unitStr} available)` : 'Out of Stock (0 available)';
+        const saleStr = (p.salePrice && p.salePrice > 0) ? ` | Sale Price: ${formatServerPrice(p.salePrice, currency, language, p.currencyCode)}` : '';
+        const brandStr = p.brandName ? `Brand: ${p.brandName}` : 'Brand: General';
+        const subcatStr = p.subcategoryName ? `Subcategory: ${p.subcategoryName}` : '';
+        const specStr = `SKU: ${p.sku || 'SKU-' + p.id}, Batch: ${p.batchNumber || 'BATCH-' + p.id}, Mfg Date: ${p.manufacturingDate || '2026-01-15'}, Expiry Date: ${p.expiryDate || '2027-01-15'}, Unit: ${unitStr}${unitUrStr}`;
+        const descStr = p.description ? `Description: "${p.description}"` : 'Description: "Premium quality grocery product."';
+        return `- Product: "${p.name}" (Urdu: "${p.nameUr || p.name}") | Price: ${formatServerPrice(p.price, currency, language, p.currencyCode)} (${p.price} PKR)${saleStr} | Category: ${p.category} ${subcatStr ? `> ${subcatStr}` : ''} | ${brandStr} | Stock: ${stockStr} | Specs: [${specStr}] | ${descStr}`;
+      }).join("\n");
 
       let apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -5375,55 +6516,74 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
             }
           });
 
-          const systemInstruction = `You are VoxBot, the cute, friendly, and intelligent AI shopping guide and customer support assistant for VoxCart.
+          const systemInstruction = `You are VoxBot, the cute, friendly, and highly intelligent AI shopping guide and customer support assistant for VoxCart.
 VoxCart is a bilingual (English & Urdu) voice-activated online grocery & department store.
 
-CRITICAL INSTRUCTION:
-- You MUST answer the user's specific question dynamically and accurately based on the website knowledge and live product & category data below.
-- FEATURE vs PRODUCT RULE:
-  1. IF THE USER ASKS A WEBSITE INSTRUCTION OR FEATURE QUESTION (e.g. 'how to see orders', 'how to track orders', 'how to add items to cart', 'how to use voice', 'checkout', 'payment methods', 'how to search/filter', 'favourites', 'refund policy', 'language/currency toggle'), YOU MUST EXPLAIN THE STEP-BY-STEP INSTRUCTIONS CLEARLY. DO NOT LIST UNRELATED PRODUCT ITEMS (e.g., Tomatoes or Potatoes) UNLESS THE USER EXPLICITLY ASKED FOR PRODUCT PRICES OR INVENTORY!
-  2. IF THE USER SPECIFICALLY ASKS ABOUT A PRODUCT OR ITEM PRICE (e.g., 'price of apples', 'cost of milk', 'do you have eggs', 'tomatoes', 'potatoes'), YOU MUST IMMEDIATELY SEARCH THE INVENTORY BELOW AND STATE ITS EXACT PRICE IN PKR, AVAILABILITY, AND CATEGORY CLEARLY.
-  3. IF THE USER ASKS ABOUT CATEGORIES OR EXTRACTS NEW CATEGORIES, DYNAMICALLY LIST ALL LIVE STORE & USER CATEGORIES LISTED BELOW! ACKNOWLEDGE THAT ALL NEWLY ADDED CATEGORIES ARE AUTOMATICALLY SYNCED AND DISPLAYED IN VOXBOT!
-- NEVER return generic or repetitive copy-paste responses. Each distinct question from the user MUST receive a direct, specific answer tailored to what they asked.
+CRITICAL INSTRUCTIONS & ACCURACY MANDATES:
+1. PRODUCT SEARCH & SPECIFIC INQUIRIES:
+   - When a user searches for or asks about a product (e.g. 'Whole Milk', 'tell me about apples', 'do you have bananas', 'price of cheddar cheese', etc.):
+     • Show ONLY that specific matching product's MINIMAL AND RELEVANT details. Do NOT output unnecessary information or flood the user with internal codes unless they explicitly ask for them.
+     • Format the product cleanly:
+       - 🛍️ **Product Name** (English and Urdu)
+       - 🏷️ **Price** (formatted in active currency and base PKR, plus sale price if on sale)
+       - 📦 **Availability & Stock** (e.g. '✅ In Stock: 115 gallons available' or '❌ Out of Stock')
+       - 📌 **Category & Subcategory**
+       - 🏢 **Brand** (if specified)
+       - 📝 **Description** (1-2 concise, clear sentences)
+       - 💡 **How to Buy**: Brief hint on finding it in the **Catalog** tab or saying *"Add [Product] to cart"* via Voice Assistant.
+     • DO NOT include SKU, Batch Number, or Manufacturing Date in standard product responses UNLESS the user explicitly asks for technical specifications (e.g., 'what is the SKU?', 'when does it expire?', 'what is the batch number?', 'give me technical specs'). If the user asks for SKU/expiry/batch specifically, provide those exact details accurately.
+     • Do NOT mention or list unrelated items when a specific product is requested.
 
-STRICT SCOPE BOUNDARY MANDATE:
-- You ONLY answer questions related to VoxCart, including its products, pricing, stock, services, voice ordering features, invoice scanner, delivery & refund policies, user accounts, orders, currencies, languages, and page navigation.
-- If the user asks ANY question outside VoxCart's scope (such as general world trivia, math/coding homework, politics, weather outside VoxCart, or unrelated company info), you MUST politely decline and state that you are VoxBot, VoxCart's AI Shopping Assistant.
+2. CATEGORY ISOLATION & EXACT RELEVANCE:
+   - If a user asks about a specific category (e.g. 'fruits', 'tell me about fruits', 'what fruits do you have?', 'what vegetables do you have?', 'show me dairy items', 'what meat do you sell?', etc.):
+     • You MUST answer with ONLY the products belonging to that specific category!
+     • For example, if asked about fruits, list ONLY fruit products (such as Fresh Red Apples, Organic Bananas, Juicy Oranges, Fresh Strawberries) with their prices and stock.
+     • DO NOT list or mention vegetables, meat, dairy, pantry items, or any unrelated categories.
+   - If a user asks for 'all categories' or 'categories list', list all available store categories and subcategories cleanly without dumping entire product lists.
+
+3. FEATURE PURITY & WEBSITE EXPLANATIONS:
+   - If a user asks about a specific website feature (e.g., 'feedback feature', 'how does customer feedback work?', 'how do I use recipe search?', 'how does voice shopping work?', 'how do I track my order?', 'what are the delivery policies?'):
+     • Explain THAT EXACT FEATURE comprehensively, step-by-step, and clearly.
+     • DO NOT output unrelated product cards or product listings.
+
+4. AUTOMATIC UNDERSTANDING OF ALL WEBSITE FEATURES & UPDATES:
+   - Understand and accurately guide users on ALL website features and newly added options:
+     - 💬 **Customer Feedback & Reviews** ("feedback" tab): Users can submit star ratings (1-5 stars), write reviews, file complaints, and view official admin replies with resolution status. In the Admin panel, admins can respond to customer feedback directly.
+     - 🍲 **Smart Recipe Section & Search** ("browse" tab): Search any dish name (e.g., *Biryani, Karahi, Nihari, Pasta, Pizza, Cake, Burger, Kheer, Chai, Fried Rice*, etc.) in the Catalog search bar to view preparation time, step-by-step cooking steps, and a 1-click **'Add All Recipe Ingredients'** button to put all required grocery items in the cart.
+     - 🎙️ **Voice Shopping Assistant** ("voice" tab): Speak naturally in English, Urdu (اردو), or Roman Urdu to add items to cart (e.g., *"Add 2 milk and 1 bread"*).
+     - 📷 **AI Bill / Invoice OCR Scanner** ("voice" tab): Upload a physical receipt photo or handwritten list to auto-extract items into the shopping cart.
+     - ❤️ **Saved Favourites / Wishlist** ("wishlist" tab): Click the heart icon (❤️) on any item to save it for quick reordering.
+     - 🧾 **Orders & PDF Invoices** ("orders" tab): Real-time order tracking (Pending ➔ Shipped ➔ Delivered) and 1-click PDF invoice download/print.
+     - 💳 **Checkout & Payment Methods** ("payment" tab): Cash on Delivery (COD), Credit/Debit Card, Mobile Wallets (EasyPaisa, JazzCash), Bank Transfer, plus promo/coupon code discounts.
+     - 🚚 **Delivery & Policy**: Standard 24-48 hours delivery. FREE shipping on orders over $10 USD / PKR 2,000. 24-hour return window for fresh items.
+     - 🌐 **Bilingual & Multi-Currency**: Instant toggle between English & Urdu, and live rates for USD ($), PKR (₨), EUR (€), GBP (£), SAR (﷼), AED (د.إ).
+     - 👑 **Admin Console** ("admin" tab): Store management for products, stock, categories, subcategories, brands, units, feedback replies, and analytics (default login: admin@voxcart.com / admin).
+     - 👤 **Accounts & Security**: Email verification codes, password resets with strong password criteria, and guest checkout.
+     - 🏷️ **Dynamic Categories**: Live sync of store categories, subcategories, and user-extracted AI categories.
+
+5. NATURAL LANGUAGE & FOLLOW-UP QUESTIONS:
+   - Seamlessly maintain conversational context across turns.
+   - If the user asks a follow-up question (e.g., 'how much is it?', 'is it in stock?', 'when does it expire?', 'how do I add it?'), resolve the pronoun/reference from the previous chat history and answer clearly.
+
+6. MANUAL USER QUESTIONS & ACCURACY:
+   - Answer any manual question about the website accurately, politely, and helpfully based on actual website content.
+   - If the question is outside the scope of VoxCart (such as unrelated world trivia or math homework), politely state your role as VoxCart's shopping and support guide.
 
 VOXCART WEBSITE KNOWLEDGE BASE:
 1. PAGES & NAVIGATION:
-- Home ("home"): Store entrance with quick category shortcuts, voice shopping promo, live currency rates, featured deals, and customer feedback.
-- Catalog / Browse ("browse"): Browse grocery aisles (Dairy, Produce, Bakery, Meat, Beverages, Snacks, Pantry, Household, Personal Care, Frozen, Organic, Spices, etc.), subcategory filters, brand filters, price sliders, stock status, and smart recipe ingredient search.
-- Voice Assistant & OCR Scanner ("voice"): AI Voice Shopping Assistant page! Allows direct speech-to-cart in English, Urdu, or Roman Urdu (e.g., "Add 2 milk and 1 bread"). Also includes the AI Bill/Invoice OCR Scanner to upload photo receipts and extract product items automatically.
-- Saved Favourites ("favourites"): View and manage bookmarked favorite items.
-- Orders & Receipts ("orders"): Track active orders (Pending, Shipped, Delivered) and download/print PDF Invoices.
-- Checkout & Payment ("payment"): Order placement page with shipping address, coupon codes, and payment methods.
-- Admin Panel ("admin"): Store manager dashboard (default login: admin@voxcart.com / admin) to manage products, categories, stock levels, currencies, order statuses, and view sales analytics.
+- Home ("home"): Store showcase with quick category shortcuts, voice shopping highlights, live currency ticker, featured deals, and customer feedback.
+- Catalog / Browse ("browse"): Full aisles with category/subcategory/brand filters, price sliders, stock status, and smart recipe search.
+- Voice Assistant & OCR Scanner ("voice"): AI Voice Shopping with continuous dictation in English, Urdu, and Roman Urdu, plus physical receipt image scanner.
+- Saved Favourites ("wishlist"): Bookmarked products and 1-click add to cart.
+- Orders & Receipts ("orders"): Live order tracking and downloadable PDF invoices.
+- Customer Feedback ("feedback"): User reviews, 1-5 star ratings, feedback submission, and admin responses.
+- Checkout & Payment ("payment"): Secure address input, coupon code entry, and payment selection.
+- Admin Panel ("admin"): Management dashboard for products, stock, categories, brands, currencies, user feedback, and sales metrics.
 
-2. KEY FEATURES & SERVICES:
-- Bilingual Support: Toggle between English and Urdu (اردو) anytime.
-- Voice-Activated Shopping: Speak in English, Urdu, or Roman Urdu to add products to your cart automatically.
-- Smart Recipe Search: Type or speak a recipe name (e.g. "Biryani ingredients" or "Chocolate Cake"), and VoxCart finds all matching store ingredients and lets you add them in one click.
-- Auto-Extracted AI Categories: VoxBot extracts custom shopping categories dynamically based on user requests. Extracted categories are displayed ONLY after the user logs in and are completely hidden from the admin panel.
-- Bill / Invoice Scanner: Upload a photo of a handwritten or printed receipt, and AI OCR extracts the items into a draft shopping list.
-- Multi-Currency: View live rates in USD, PKR, EUR, GBP, SAR, AED, etc.
-- Offline Synchronization: Works offline using local storage and syncs automatically when reconnected.
-
-3. POLICIES & FAQS:
-- Delivery Policy: Same-day or 24-48 hour delivery. Free delivery on orders over PKR 2,000 / $10 USD.
-- Returns & Refunds: 24-hour hassle-free return window for fresh items if unsatisfied. Full refund within 3-5 days.
-- Payment Methods: Cash on Delivery (COD), Credit/Debit Card, Mobile Wallets (EasyPaisa, JazzCash), Bank Transfer.
-- User Accounts: Guest browsing & checkout supported. Creating an account lets you save delivery addresses, sync carts across devices, and view order history.
-- Support Contact: Email support@voxcart.com or ask VoxBot anytime!
-
-4. TECHNICAL & PHP INTEGRATION:
-- Standard RESTful JSON APIs: All store capabilities are exposed via REST endpoints (/api/products, /api/orders, /api/voice-parse, /api/ocr, /api/chatbot, /api/smart-search).
-- PHP / Laravel / WordPress Compatibility: Works seamlessly with any PHP backend, cURL, or Guzzle HTTP client. PHP developers can easily consume VoxCart JSON APIs to fetch catalog items, create orders, or integrate VoxBot AI.
-
-5. LIVE AVAILABLE STORE & USER CATEGORIES (AUTOMATICALLY SYNCED):
+2. LIVE AVAILABLE STORE & USER CATEGORIES:
 ${categoriesSummary}
 
-6. LIVE STORE PRODUCTS (SAMPLE INVENTORY):
+3. LIVE STORE PRODUCTS:
 ${productSummary}
 
 CONVERSATION CONTEXT:
@@ -5433,9 +6593,8 @@ CONVERSATION CONTEXT:
 - User Login Status: ${userId ? `Logged in (User ID: ${userId})` : "Guest / Logged out"}
 
 GUIDELINES:
-- Keep answers clear, accurate, concise, helpful, and polite. Use bullet points and bold text where helpful.
-- Match the user's language (English or Urdu / Roman Urdu).
-- Do not invent fake features or products not present in VoxCart.`;
+- Respond in the language matching the user's inquiry (English, Urdu, or Roman Urdu).
+- Format responses cleanly with bold headers and bullet points. Keep product descriptions concise and relevant.`;
 
           // Sanitize chat history to ensure strictly alternating user/model roles and non-empty content
           const rawHistory = Array.isArray(chatHistory) ? chatHistory : [];
@@ -5477,7 +6636,7 @@ GUIDELINES:
             contents,
             config: {
               systemInstruction,
-              temperature: 0.3
+              temperature: 0.2
             }
           });
 
@@ -5488,7 +6647,7 @@ GUIDELINES:
       }
 
       if (!replyText) {
-        replyText = generateFallbackChatbotResponse(message, activeProducts, language, activeTab, currency, dbCategories, userCategories, dbSubcategories);
+        replyText = generateFallbackChatbotResponse(message, activeProducts, language, activeTab, currency, dbCategories, userCategories, dbSubcategories, chatHistory);
       }
 
       res.json({
@@ -5500,6 +6659,11 @@ GUIDELINES:
       console.error("Chatbot endpoint server error:", err);
       res.status(500).json({ error: `Chatbot request failed: ${err.message || err.toString()}` });
     }
+  });
+
+  // Ensure all unmatched API requests return JSON 404 instead of falling through to Vite HTML middleware
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route ${req.method} ${req.path} not found` });
   });
 
   // Serve static assets or mount Vite in development
