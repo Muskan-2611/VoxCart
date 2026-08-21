@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Nastaliq+Urdu:wght@400;700&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
 
 @theme {
   --color-primary-light: #9333ea;
@@ -11,8 +11,8 @@
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     background-color: #030712;
     background-image: 
-      radial-gradient(at 0% 0%, rgba(147, 51, 234, 0.08) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(79, 70, 229, 0.08) 0px, transparent 50%);
+      radial-gradient(at 0% 0%, rgba(147, 51, 234, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(147, 51, 234, 0.03) 0px, transparent 50%);
     background-attachment: fixed;
     color: #f3f4f6;
     overflow-x: hidden;
@@ -21,7 +21,7 @@
 
   /* Urdu (RTL) mode typography */
   [dir="rtl"] {
-    font-family: 'Noto Nastaliq Urdu', 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family:  'Plus Jakarta Sans', system-ui, sans-serif;
     line-height: 2.2;
   }
 }
@@ -117,5 +117,111 @@
 }
 
 /* Disable blue highlighting on mobile */
--webkit-tap-highlight-color: transparent;
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Rich Text Description Formatting Styles */
+.rich-text-content, .prose {
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.rich-text-content p, .prose p {
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-content p:last-child, .prose p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-content b, .rich-text-content strong, .prose b, .prose strong {
+  font-weight: 700;
+  color: #34d399; /* emerald-400 accent for bold terms */
+}
+
+.rich-text-content i, .rich-text-content em, .prose i, .prose em {
+  font-style: italic;
+  color: #e2e8f0;
+}
+
+.rich-text-content u, .prose u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rich-text-content strike, .rich-text-content s, .prose strike, .prose s {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.rich-text-content h1, .prose h1 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #f3f4f6;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.rich-text-content h2, .prose h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.rich-text-content h3, .prose h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #a7f3d0;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.rich-text-content ul, .prose ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-content ol, .prose ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-content li, .prose li {
+  margin-bottom: 0.25rem;
+}
+
+.rich-text-content blockquote, .prose blockquote {
+  border-left: 3px solid #10b981;
+  padding-left: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(16, 185, 129, 0.05);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.rich-text-content a, .prose a {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-text-content code, .prose code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  font-size: 0.85em;
+  color: #f472b6;
+}
 

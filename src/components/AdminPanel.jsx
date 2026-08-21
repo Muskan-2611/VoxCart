@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { TRANSLATIONS, formatPrice } from "../utils/localizer";
 import { api } from "../utils/api";
 import { validateStrongPassword } from "../utils/passwordValidator";
+import RichTextEditor from "./RichTextEditor";
 import { 
   Trash, 
   Edit3, 
@@ -22,7 +23,6 @@ import {
   FileText,
   Layers,
   Settings,
-  Sparkles,
   Download,
   Upload,
   AlertCircle,
@@ -35,7 +35,8 @@ import {
   Star,
   Clock,
   ShieldAlert,
-  MessageCircle
+  MessageCircle,
+  X
 } from "lucide-react";
 import MasterSettings from "./MasterSettings";
 
@@ -1363,11 +1364,12 @@ export default function AdminPanel({
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">{t.productNameEn} *</label>
                 <input
+                  id="admin-prod-name-input"
                   type="text"
                   required
                   value={prodForm.name}
                   onChange={(e) => setProdForm({ ...prodForm, name: e.target.value })}
-                  placeholder="e.g. Cheddar Cheese"
+                  placeholder="e.g. Cheddar Cheese, Basmati Rice, Whole Milk"
                   className="bg-white/5 border border-white/15 focus:border-emerald-500 focus:bg-white/10 rounded-xl px-3.5 py-2.5 text-xs outline-none text-white transition"
                 />
               </div>
@@ -1558,18 +1560,17 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              {/* Product Description */}
-              <div className="border-t border-white/10 pt-3 flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Description</label>
-                  <textarea
-                    placeholder="Enter detailed product description..."
-                    rows={2}
-                    value={prodForm.description || ""}
-                    onChange={(e) => setProdForm({ ...prodForm, description: e.target.value })}
-                    className="bg-white/5 border border-white/15 focus:border-emerald-500 focus:bg-white/10 rounded-xl px-2.5 py-2 text-xs outline-none text-white transition resize-none"
-                  />
-                </div>
+              {/* Product Description Rich Text Editor */}
+              <div className="border-t border-white/10 pt-3 flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex items-center justify-between">
+                  <span>Product Description (Rich Text Editor)</span>
+                  <span className="text-[9px] text-emerald-400 font-normal">WYSIWYG • HTML • Preview</span>
+                </label>
+                <RichTextEditor
+                  value={prodForm.description || ""}
+                  onChange={(newHtml) => setProdForm(prev => ({ ...prev, description: newHtml }))}
+                  placeholder="Enter detailed product description with bold text, bullet points, headings..."
+                />
               </div>
 
               {/* LOCAL SECURE SERVER OR MANUAL IMAGE URL CONTROLS */}

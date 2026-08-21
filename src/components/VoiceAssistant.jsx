@@ -28,7 +28,8 @@ import {
   RotateCcw,
   Image as ImageIcon,
   Scan,
-  Maximize2
+  Maximize2,
+  Search
 } from "lucide-react";
 import { api } from "../utils/api";
 import { matchProductFuzzy } from "../utils/productMatcher";
@@ -163,7 +164,7 @@ export default function VoiceAssistant({
   products = [],
   onRefreshProducts
 }) {
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
   const isUr = lang === "ur";
 
   // Mode state: 'voice' | 'scanner'
@@ -187,6 +188,7 @@ export default function VoiceAssistant({
   const [recipeLoading, setRecipeLoading] = useState(false);
   const [activeRecipeTitle, setActiveRecipeTitle] = useState(null);
   const [manualVoiceInput, setManualVoiceInput] = useState("");
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState("");
 
   const handleAddManualVoiceProduct = () => {
     if (!manualVoiceInput || !manualVoiceInput.trim()) return;
@@ -2330,8 +2332,37 @@ export default function VoiceAssistant({
                       <span>{isUr ? "ترکیب منتخب کریں (100 مکمل پاکستانی و عالمی ڈشز):" : "Select Recipe Dropdown (100 Complete Recipes):"}</span>
                     </span>
                     <span className="text-[10px] text-purple-300 font-bold bg-purple-500/20 px-2.5 py-0.5 rounded-full border border-purple-500/30">
-                      100 {isUr ? "ریسپیز" : "Recipes"}
+                      {VOICE_ASSISTANT_100_RECIPES.filter(r => {
+                        if (!recipeSearchQuery.trim()) return true;
+                        const sq = recipeSearchQuery.toLowerCase().trim();
+                        return (r.name && r.name.toLowerCase().includes(sq)) || 
+                               (r.nameUr && r.nameUr.toLowerCase().includes(sq)) || 
+                               (r.query && r.query.toLowerCase().includes(sq));
+                      }).length} {isUr ? "ریسپیز" : "Recipes"}
                     </span>
+                  </div>
+
+                  {/* Recipe Search Bar */}
+                  <div className="relative w-full">
+                    <Search className="w-3.5 h-3.5 text-purple-400 absolute left-3 top-2.5 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={recipeSearchQuery}
+                      onChange={(e) => setRecipeSearchQuery(e.target.value)}
+                      placeholder={isUr ? "ریسپیز میں تلاش کریں (مثال: Biryani, Karahi, Haleem, Kheer)..." : "Search recipes (e.g., Biryani, Karahi, Haleem, Kheer)..."}
+                      className="w-full bg-slate-950/90 text-white placeholder-white/40 text-xs rounded-xl pl-8 pr-8 py-2 border border-purple-500/30 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-400/50 shadow-inner"
+                      dir={isUr ? "rtl" : "ltr"}
+                    />
+                    {recipeSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setRecipeSearchQuery("")}
+                        className="absolute right-2.5 top-2 text-white/40 hover:text-white text-xs cursor-pointer p-0.5"
+                        title={isUr ? "صاف کریں" : "Clear search"}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
 
                   {/* Dropdown Select Element */}
@@ -2350,7 +2381,13 @@ export default function VoiceAssistant({
                       <option value="" disabled className="bg-slate-900 text-gray-400">
                         {isUr ? "--- ڈراپ ڈاؤن لسٹ میں سے ترکیب منتخب کریں ---" : "--- Select a Recipe from Dropdown (100 Available) ---"}
                       </option>
-                      {VOICE_ASSISTANT_100_RECIPES.map((rec, i) => (
+                      {VOICE_ASSISTANT_100_RECIPES.filter(rec => {
+                        if (!recipeSearchQuery.trim()) return true;
+                        const sq = recipeSearchQuery.toLowerCase().trim();
+                        return (rec.name && rec.name.toLowerCase().includes(sq)) || 
+                               (rec.nameUr && rec.nameUr.toLowerCase().includes(sq)) || 
+                               (rec.query && rec.query.toLowerCase().includes(sq));
+                      }).map((rec, i) => (
                         <option key={i} value={rec.query} className="bg-slate-900 text-white font-medium py-1">
                           {rec.icon} {isUr ? rec.nameUr : rec.name}
                         </option>
@@ -2361,7 +2398,13 @@ export default function VoiceAssistant({
 
                   {/* Quick Recipe Chips */}
                   <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-white/10 whitespace-nowrap">
-                    {VOICE_ASSISTANT_100_RECIPES.slice(0, 24).map((rec, i) => (
+                    {VOICE_ASSISTANT_100_RECIPES.filter(rec => {
+                      if (!recipeSearchQuery.trim()) return true;
+                      const sq = recipeSearchQuery.toLowerCase().trim();
+                      return (rec.name && rec.name.toLowerCase().includes(sq)) || 
+                             (rec.nameUr && rec.nameUr.toLowerCase().includes(sq)) || 
+                             (rec.query && rec.query.toLowerCase().includes(sq));
+                    }).slice(0, 24).map((rec, i) => (
                       <button
                         key={i}
                         type="button"

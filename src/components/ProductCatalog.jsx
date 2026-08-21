@@ -19,7 +19,7 @@ export default function ProductCatalog({
   onAddItems, // Passes the bilingual parser multi-addition back to App state
   onNotify
 }) {
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeSubcategory, setActiveSubcategory] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1284,12 +1284,17 @@ export default function ProductCatalog({
                     <h5 className="text-xs font-bold uppercase tracking-wider text-purple-300/70 mb-1">
                       {lang === "ur" ? "مصنوعات کی تفصیلات" : "Product Description"}
                     </h5>
-                    <p className="text-xs md:text-sm text-white/80 leading-relaxed bg-slate-950/40 p-3 rounded-xl border border-white/5 whitespace-pre-line">
-                      {lang === "ur" 
-                        ? (selectedProduct.descriptionUr || selectedProduct.description || "اسٹور کیٹلاگ سے تازہ اور اعلیٰ کوالٹی پروڈکٹ۔") 
-                        : (selectedProduct.description || selectedProduct.descriptionUr || "Fresh, high-quality product carefully selected for your daily needs.")
-                      }
-                    </p>
+                    <div className="text-xs md:text-sm text-white/90 leading-relaxed bg-slate-950/60 p-3.5 rounded-xl border border-white/10 rich-text-content">
+                      {(() => {
+                        const desc = lang === "ur" 
+                          ? (selectedProduct.descriptionUr || selectedProduct.description || "اسٹور کیٹلاگ سے تازہ اور اعلیٰ کوالٹی پروڈکٹ۔") 
+                          : (selectedProduct.description || selectedProduct.descriptionUr || "Fresh, high-quality product carefully selected for your daily needs.");
+                        if (desc && (/<[a-z][\s\S]*>/i.test(desc) || desc.includes("<"))) {
+                          return <div className="rich-text-content" dangerouslySetInnerHTML={{ __html: desc }} />;
+                        }
+                        return <p className="whitespace-pre-line">{desc}</p>;
+                      })()}
+                    </div>
                   </div>
 
                   {/* Additional Metadata */}

@@ -9,7 +9,7 @@ export default function PaymentView({
   onSubmitPayment,
   onCancel
 }) {
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
   const isUr = lang === "ur";
 
   // State management

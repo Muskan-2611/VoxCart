@@ -237,9 +237,9 @@ export const api = {
     body: JSON.stringify({ email, password, verificationCode, code: verificationCode })
   }),
   
-  register: (name, email, password) => request("auth/register", {
+  register: (name, email, password, verificationCode = null) => request("auth/register", {
     method: "POST",
-    body: JSON.stringify({ name, email, password })
+    body: JSON.stringify({ name, email, password, verificationCode, code: verificationCode })
   }),
 
   resetPassword: (email, newPassword) => request("auth/reset-password", {

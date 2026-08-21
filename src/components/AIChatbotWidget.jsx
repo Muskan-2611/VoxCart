@@ -4,6 +4,7 @@ import {
   HelpCircle, ShoppingBag, Mic, Truck, CreditCard, ShieldCheck, 
   UserCheck, ExternalLink, Minimize2, RefreshCw, Zap, BookOpen, Tag, Search, ShoppingCart
 } from "lucide-react";
+import VoxyAvatar, { voxyIdle, voxyHappy, voxyThinking } from "./VoxyAvatar";
 import { api } from "../utils/api";
 import { formatPrice } from "../utils/localizer";
 import { parseVoiceCommand } from "../utils/voiceParser";
@@ -160,8 +161,89 @@ function generateDynamicClientResponse(query, lang, products = [], currency = "U
   ];
   if (nonStoreTrivia.some(k => q.includes(k))) {
     return isUr
-      ? "میں والکس کارٹ کا **VoxBot AI** اسسٹنٹ ہوں۔ 🤖 میں اس ویب سائٹ کے تمام فیچرز، شاپنگ، ریسیپیز، پروڈکٹس، اور کسٹمر سپورٹ میں آپ کی مکمل رہنمائی کے لیے حاضر ہوں۔ آپ VoxCart سے متعلق کیا جاننا یا کرنا چاہتے ہیں؟"
-      : "I am VoxBot, your VoxCart AI Shopping & Support Assistant! 🤖 I am trained to assist you with all store products, recipes, voice shopping, orders, feedback, and website navigation. How can I assist you with VoxCart today?";
+      ? "میں والکس کارٹ کا **Voxy AI** اسسٹنٹ ہوں۔ 🤖 میں اس ویب سائٹ کے تمام فیچرز، پروڈکٹس، ریسیپیز، بل اسکینر، فیڈبیک، اور کسٹمر سپورٹ میں آپ کی رہنمائی کے لیے حاضر ہوں۔ آپ VoxCart سے متعلق کیا جاننا چاہتے ہیں؟"
+      : "I am Voxy AI, your VoxCart AI Shopping & Website Assistant! 🤖 I am here to assist you with all store products, live stock, smart recipes, OCR bill scanner, customer feedback, store policies, and website navigation. How can I help you today?";
+  }
+
+  // 1b. "WHAT'S NEW ON THE WEBSITE" & ANNOUNCEMENTS
+  if (q.includes("what's new") || q.includes("whats new") || q.includes("what is new") || q.includes("new feature") || q.includes("new on the website") || q.includes("نیا کیا ہے") || q.includes("نئے فیچرز") || q.includes("تازہ ترین")) {
+    return isUr
+      ? "✨ **والکس کارٹ پر نئی سہولیات اور فیچرز (What's New on VoxCart):**\n\n" +
+        "1. 📷 **AI بل اور لسٹ اسکینر (Bill Scanner):** کاغذی بل یا ہاتھ سے لکھی شاپنگ لسٹ کی تصویر اپ لوڈ کریں؛ AI خودکار طور پر اشیاء پڑھ کر کارٹ میں شامل کر دیتا ہے۔ یہ **Voice Assistant** پیج پر دستیاب ہے۔\n" +
+        "2. 💬 **کسٹمر فیڈبیک و ایڈمن ریپلائی (Customer Feedback):** اب آپ ستارہ ریٹنگ اور رائے درج کر سکتے ہیں، اور ایڈمن ٹیم کے سرکاری جوابات اور حل کا اسٹیٹس براہ راست **Customer Feedback** ٹیب پر دیکھ سکتے ہیں۔\n" +
+        "3. 🍲 **سمارٹ ریسپی ڈراپ ڈاؤن و آٹومیشن (Recipe Dropdown):** **Catalog** ٹیب میں ریسپی منتخب کریں (جیسے بریانی، کڑاہی، پاستا) اور 1 کلک میں تمام دستیاب اجزاء کارٹ میں ڈالیں۔\n" +
+        "4. 🤖 **ووکسی AI اسسٹنٹ (Voxy AI):** ویب سائٹ کی لائیو معلومات، پروڈکٹ موازنہ، دستیابی کی جانچ، اور درست خریداری رہنمائی فراہم کرنے والا جدید ترین اسسٹنٹ!"
+      : "✨ **What's New on VoxCart:**\n\n" +
+        "1. 📷 **AI Bill & Receipt Scanner:** Upload any grocery bill photo or handwritten list to auto-extract and add items directly to your cart (**Voice Assistant** page).\n" +
+        "2. 💬 **Customer Feedback & Admin Resolution:** Share ratings (1-5 stars), post reviews or suggestions, and track official verified admin replies with status badges on the **Customer Feedback** page.\n" +
+        "3. 🍲 **Smart Recipe Dropdown & Automation:** In the **Catalog** tab, explore top dishes (Biryani, Karahi, Pasta, Pizza, Cake, etc.) to view step-by-step prep and add all required ingredients in 1-click.\n" +
+        "4. 🤖 **Voxy AI Assistant:** Upgraded 3D assistant with full real-time awareness of our entire catalog, live stock availability, product comparisons, recommendations, and policy guidance!";
+  }
+
+  // 1c. PRODUCT COMPARISONS ("What is the difference between A and B?", "Compare A and B")
+  const isComparisonQuery = (
+    q.includes("difference between") || q.includes("compare") || q.includes("vs") || q.includes("versus") ||
+    q.includes("فرق") || q.includes("موازنہ") || q.includes("بہتر کون")
+  );
+  if (isComparisonQuery) {
+    const matchedComp = activeProds.filter(p => {
+      const pName = (p.name || "").toLowerCase();
+      const pUr = (p.nameUr || "").toLowerCase();
+      return (pName && q.includes(pName)) || (pUr && q.includes(pUr)) || (p.category && q.includes(p.category.toLowerCase()));
+    });
+
+    if (matchedComp.length >= 2) {
+      const p1 = matchedComp[0];
+      const p2 = matchedComp[1];
+      const p1Stock = (p1.stockQuantity !== undefined && p1.stockQuantity > 0)
+        ? (isUr ? `✅ اسٹاک (${p1.stockQuantity})` : `✅ In Stock (${p1.stockQuantity})`)
+        : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+      const p2Stock = (p2.stockQuantity !== undefined && p2.stockQuantity > 0)
+        ? (isUr ? `✅ اسٹاک (${p2.stockQuantity})` : `✅ In Stock (${p2.stockQuantity})`)
+        : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+
+      return isUr
+        ? `⚖️ **پروڈکٹ کا موازنہ: ${p1.name} بمقابلہ ${p2.name}**\n\n` +
+          `1. **${p1.name}** (${p1.nameUr || ''}):\n` +
+          `   - 🏷️ قیمت: **${fmt(p1.price, p1.currencyCode)}** (${p1.price} PKR) فی ${p1.unitUr || p1.unit || 'یونٹ'}\n` +
+          `   - 📌 کیٹیگری: ${p1.category} | برانڈ: ${p1.brandName || 'General'}\n` +
+          `   - 📦 دستیابی: ${p1Stock}\n` +
+          `   - 📝 خصوصیت: ${p1.description || 'اعلیٰ معیار'}\n\n` +
+          `2. **${p2.name}** (${p2.nameUr || ''}):\n` +
+          `   - 🏷️ قیمت: **${fmt(p2.price, p2.currencyCode)}** (${p2.price} PKR) فی ${p2.unitUr || p2.unit || 'یونٹ'}\n` +
+          `   - 📌 کیٹیگری: ${p2.category} | برانڈ: ${p2.brandName || 'General'}\n` +
+          `   - 📦 دستیابی: ${p2Stock}\n` +
+          `   - 📝 خصوصیت: ${p2.description || 'اعلیٰ معیار'}\n\n` +
+          `💡 **نتیجہ:** دونوں پروڈکٹس **Catalog** ٹیب میں دستیاب ہیں!`
+        : `⚖️ **Product Comparison: ${p1.name} vs ${p2.name}**\n\n` +
+          `1. **${p1.name}**:\n` +
+          `   - 🏷️ **Price:** **${fmt(p1.price, p1.currencyCode)}** (${p1.price} PKR) / ${p1.unit || 'unit'}\n` +
+          `   - 📌 **Category:** ${p1.category} | **Brand:** ${p1.brandName || 'General'}\n` +
+          `   - 📦 **Stock Status:** ${p1Stock}\n` +
+          `   - 📝 **Details:** ${p1.description || 'Premium quality'}\n\n` +
+          `2. **${p2.name}**:\n` +
+          `   - 🏷️ **Price:** **${fmt(p2.price, p2.currencyCode)}** (${p2.price} PKR) / ${p2.unit || 'unit'}\n` +
+          `   - 📌 **Category:** ${p2.category} | **Brand:** ${p2.brandName || 'General'}\n` +
+          `   - 📦 **Stock Status:** ${p2Stock}\n` +
+          `   - 📝 **Details:** ${p2.description || 'Premium quality'}\n\n` +
+          `💡 **Summary:** Both items can be browsed and added to your cart in the **Catalog** tab!`;
+    }
+  }
+
+  // 1d. RECOMMENDATIONS & "BEST PRODUCT FOR ME"
+  const isRecommendationQuery = (
+    q.includes("best for me") || q.includes("which product") || q.includes("recommend") || q.includes("suggestion") ||
+    q.includes("what should i buy") || q.includes("کون سا بہتر") || q.includes("تجویز") || q.includes("مشورہ")
+  );
+  if (isRecommendationQuery) {
+    const inStockItems = activeProds.filter(p => (p.stockQuantity === undefined || p.stockQuantity > 0) && p.status !== "Inactive");
+    const topPicks = inStockItems.slice(0, 4).map(p => 
+      `• **${p.name}** (${fmt(p.price, p.currencyCode)} / ${p.unit || 'unit'}): ${p.description || p.category}`
+    ).join("\n");
+
+    return isUr
+      ? `🌟 **آپ کے لیے والکس کارٹ کی بہترین تجاویز:**\n\n${topPicks}\n\n💡 آپ اپنی پسند، بجٹ یا مخصوص ڈش کے بارے میں بتائیں تاکہ میں مزید موزوں اشیاء تجویز کر سکوں!`
+      : `🌟 **Top Recommended Products for You:**\n\n${topPicks}\n\n💡 Tell me your preferred category (e.g. Dairy, Fruits, Meat, Pantry) or budget to get tailored recommendations!`;
   }
 
   // 2. PRODUCT TYPES & CLASSIFICATIONS OVERVIEW (Scrolling Types Support)
@@ -400,6 +482,63 @@ function generateDynamicClientResponse(query, lang, products = [], currency = "U
   }
 
   // 6. WEBSITE ACTIONS & NAVIGATION TASKS
+  if (q.includes("all pages") || q.includes("website structure") || q.includes("how website works") || q.includes("overview of website") || q.includes("pages list") || q.includes("پیجز") || q.includes("تمام پیجز")) {
+    return isUr
+      ? "🗺️ **والکس کارٹ ویب سائٹ کے تمام پیجز اور خصوصیات (Website Pages Overview):**\n\n" +
+        "1. 🏠 **Home Page ('home'):** مین اسٹور شوکیس، لائیو کرنسی لسٹ، ڈیل ہب ڈسکاؤنٹس، اور وائس اسسٹنٹ ہائی لائٹس۔\n" +
+        "2. 🛍️ **Catalog / Browse ('browse'):** تمام گروسری اشیاء، کیٹیگریز و برانڈز فلٹرز، پرائس سلائیڈر، اور سمارٹ ریسپی سرچ۔\n" +
+        "3. 🎙️ **Voice Assistant ('voice'):** اردو و انگریزی صوتی شاپنگ ڈکٹیشن اور تصویر سے کاغذی بل اسکینر (OCR)۔\n" +
+        "4. ❤️ **Saved Favourites ('wishlist'):** آپ کی محفوظ کردہ پسندیدہ اشیاء۔\n" +
+        "5. 🧾 **Orders & Receipts ('orders'):** لائیو آرڈر اسٹیٹس ٹریکنگ اور PDF انوائس ڈاؤن لوڈ۔\n" +
+        "6. 💬 **Customer Feedback ('feedback'):** ستارہ ریٹنگ، گاہکوں کے تبصرے اور ایڈمن کے سرکاری جوابات۔\n" +
+        "7. 💳 **Checkout & Payment ('payment'):** ایڈریس، کوپن کوڈ اور ادائیگی کے طریقے (COD, Cards, EasyPaisa, JazzCash, Bank Transfer)۔\n" +
+        "8. ⚙️ **Admin Panel ('admin'):** اسٹور ایڈمنز کے لیے پروڈکٹس، کیٹیگریز، کرنسی، فیڈبیک اور آرڈرز مینجمنٹ۔"
+      : "🗺️ **Complete VoxCart Website Pages & Features Guide:**\n\n" +
+        "1. 🏠 **Home Page ('home'):** Store showcase, live currency ticker, deal hub discounts, category shortcuts, and review highlights.\n" +
+        "2. 🛍️ **Catalog / Browse ('browse'):** Browse all groceries, filter by category/brand, adjust price slider, or select smart recipes.\n" +
+        "3. 🎙️ **Voice Assistant ('voice'):** Hands-free voice shopping in English/Urdu and AI Bill/Receipt Photo Scanner (OCR).\n" +
+        "4. ❤️ **Saved Favourites ('wishlist'):** View bookmarked favorite products and add them to cart in 1-click.\n" +
+        "5. 🧾 **Orders & Receipts ('orders'):** Live order progress tracking (Pending ➔ Delivered) and downloadable PDF invoices.\n" +
+        "6. 💬 **Customer Feedback ('feedback'):** Submit 1-5 star ratings, post reviews, and view official verified admin replies.\n" +
+        "7. 💳 **Checkout & Payment ('payment'):** Enter delivery address, apply coupon codes, and select payment methods (COD, Card, EasyPaisa, JazzCash, Bank Transfer).\n" +
+        "8. ⚙️ **Admin Console ('admin'):** Store management for inventory, stock levels, categories, exchange rates, order status, and feedback resolution.";
+  }
+
+  // TROUBLESHOOTING: Microphone & Voice Issues
+  if (q.includes("mic not working") || q.includes("microphone error") || q.includes("voice issue") || q.includes("cannot hear") || q.includes("voice failed") || q.includes("مائیک کام نہیں کر رہا")) {
+    return isUr
+      ? "🛠️ **مائیکروفون کام نہ کرنے کا حل (Voice Troubleshooting):**\n1. براؤزر کے ایڈریس بار میں لاک/مائیک ائیکن پر کلک کر کے مائیکروفون اجازت (Allow Microphone) یقینی بنائیں۔\n2. یقینی بنائیں کہ کوئی اور ایپ مائیک استعمال نہ کر رہی ہو۔\n3. بہترین وائس ریکگنیشن کے لیے Google Chrome یا Microsoft Edge استعمال کریں۔"
+      : "🛠️ **Microphone & Voice Assistant Troubleshooting:**\n1. Ensure browser microphone permissions are set to **Allow** in your browser's address bar.\n2. Check that no other application is currently locking your microphone.\n3. For best Web Speech API performance, use Google Chrome, Microsoft Edge, or Safari.";
+  }
+
+  // TROUBLESHOOTING: Receipt Scanner Issues
+  if (q.includes("scanner issue") || q.includes("receipt failed") || q.includes("cannot scan") || q.includes("ocr error") || q.includes("اسکینر مسئلہ")) {
+    return isUr
+      ? "🛠️ **بل اسکینر کا مسئلہ حل کرنے کا طریقہ:**\n1. تصویر صاف، روشن اور سیدھی ہونی چاہیے۔\n2. کاغذی بل یا لکھی ہوئی لسٹ پر نام اور مقدار واضح ہونی چاہیے۔\n3. بہتر رزلٹ کے لیے دوبارہ ایچ ڈی (HD) تصویر اپ لوڈ کریں۔"
+      : "🛠️ **OCR Bill Scanner Troubleshooting:**\n1. Ensure the photo is clear, properly lit, and not blurry or rotated.\n2. Verify that item names and quantities on the paper bill/list are legible.\n3. Re-upload a higher resolution image for maximum OCR accuracy.";
+  }
+
+  // TROUBLESHOOTING: Out of Stock
+  if (q.includes("out of stock") || q.includes("sold out") || q.includes("unavailable product") || q.includes("اسٹاک ختم")) {
+    return isUr
+      ? "📦 **آؤٹ آف اسٹاک پروڈکٹس کے بارے میں:**\nوالکس کارٹ کا اسٹور سسٹم لائیو اسٹاک اپ ڈیٹ کرتا ہے۔ اگر کوئی پروڈکٹ آؤٹ آف اسٹاک ہے تو اسے فی الوقت کارٹ میں شامل نہیں کیا جا سکتا۔ ایڈمن ٹیم جلد اسٹاک دوبارہ شامل کر دیتی ہے۔ آپ ووکسی AI سے متبادل پروڈکٹس کی تجاویز مانگ سکتے ہیں!"
+      : "📦 **Out of Stock & Inventory Resolution:**\nVoxCart tracks real-time inventory. When stock reaches 0, the item is marked Out of Stock to prevent unfulfillable orders. Store admins restock items regularly. You can ask Voxy AI for alternative available products in the same category!";
+  }
+
+  // TROUBLESHOOTING: Login / Password Reset
+  if (q.includes("forgot password") || q.includes("reset password") || q.includes("cannot login") || q.includes("login issue") || q.includes("پاس ورڈ بھول گئے")) {
+    return isUr
+      ? "🔑 **لاگ ان اور پاس ورڈ ری سیٹ کا طریقہ:**\n1. ہیڈر میں Account آئیکن پر کلک کریں۔\n2. **Forgot Password** منتخب کریں اور اپنا رجسٹرڈ ای میل درج کریں۔\n3. ای میل پر آنے والا ویریفیکیشن کوڈ درج کر کے نیا مضبوط پاس ورڈ سیٹ کریں۔"
+      : "🔑 **Account Login & Password Reset Assistance:**\n1. Click the User/Account icon in the top header bar.\n2. Click **Forgot Password / Reset Password** and enter your registered email address.\n3. Enter the 6-digit email verification code sent to you to establish a new strong password!";
+  }
+
+  // TROUBLESHOOTING: Coupon / Payment Error
+  if (q.includes("coupon error") || q.includes("payment error") || q.includes("payment failed") || q.includes("کوپن مسئلہ")) {
+    return isUr
+      ? "💳 **کوپن اور پیمنٹ کے مسائل کا حل:**\n1. کوپن کوڈ بغیر کسی اسپیس کے درستی سے درج کریں۔\n2. چیک کریں کہ کارٹ میں کم از کم مطلوبہ رقم پوری ہے۔\n3. اگر کارڈ یا آن لائن پیمنٹ فیل ہو تو Cash on Delivery (COD) منتخب کر کے آرڈر مکمل کریں۔"
+      : "💳 **Coupon & Payment Error Resolution:**\n1. Double check that the promo code is spelled correctly without extra spaces.\n2. Ensure your cart meets any minimum order requirements for discounts.\n3. If an online payment fails, switch to Cash on Delivery (COD) to complete your order smoothly!";
+  }
+
   if (q.includes("favourite") || q.includes("favorite") || q.includes("bookmark") || q.includes("heart") || q.includes("wishlist") || q.includes("save") || q.includes("پسندیدہ") || q.includes("فیورٹ")) {
     return isUr
       ? "❤️ **پسندیدہ اشیاء محفوظ کرنے کا طریقہ (Add to Favorites):**\n1. کسی بھی پروڈکٹ کارڈ کے اوپر دائیں کونے میں موجود **دل (❤️)** کے آئیکن پر کلک کریں۔\n2. وہ پروڈکٹ آپ کی پسندیدہ لسٹ میں محفوظ ہو جائے گی۔\n3. اوپر نیویگیشن بار میں **Saved Favourites** ٹیب کھول کر آپ تمام محفوظ شدہ اشیاء دیکھ سکتے ہیں اور ایک کلک میں کارٹ میں ڈال سکتے ہیں!"
@@ -465,6 +604,37 @@ function generateDynamicClientResponse(query, lang, products = [], currency = "U
     "spec", "specs", "specification", "specifications", "feature", "features", "details", "info", "information"
   ]);
 
+  const synonymsMap = {
+    "apple": ["apples", "gala", "سیب"],
+    "apples": ["apple", "gala", "سیب"],
+    "milk": ["whole milk", "dairy", "دودھ"],
+    "egg": ["eggs", "farm fresh eggs", "انڈے"],
+    "eggs": ["egg", "farm fresh eggs", "انڈے"],
+    "bread": ["buns", "bakery", "ڈبل روٹی", "روٹی"],
+    "tomato": ["tomatoes", "red tomatoes", "ٹماٹر"],
+    "tomatoes": ["tomato", "red tomatoes", "ٹماٹر"],
+    "potato": ["potatoes", "آلو"],
+    "potatoes": ["potato", "آلو"],
+    "onion": ["onions", "پیاز"],
+    "onions": ["onion", "پیاز"],
+    "chicken": ["chicken breast", "poultry", "مرغی", "چکن"],
+    "beef": ["ground beef", "meat", "گوشت", "بیف"],
+    "meat": ["chicken", "beef", "گوشت"],
+    "rice": ["white rice", "basmati", "چاول"],
+    "oil": ["cooking oil", "آئل", "تیل"],
+    "salt": ["table salt", "iodized", "نمک"],
+    "sugar": ["white sugar", "چینی"],
+    "tea": ["green tea", "chai", "چائے"],
+    "butter": ["farm butter", "مکھن"],
+    "cheese": ["cheddar cheese", "پنیر", "چیز"],
+    "pasta": ["artisanal pasta", "پاستا"],
+    "flour": ["wheat flour", "atta", "آٹا"],
+    "yogurt": ["greek yogurt", "دہی"],
+    "burger": ["burger buns", "برگر"],
+    "pizza": ["pizza dough", "پیزا"],
+    "cake": ["chocolate cake", "کیک"]
+  };
+
   const words = q.split(/[^a-zA-Z0-9\u0600-\u06FF]+/).filter(w => w.length >= 2 && !ignoreWords.has(w));
 
   let matchedProducts = [];
@@ -474,31 +644,38 @@ function generateDynamicClientResponse(query, lang, products = [], currency = "U
     const pUr = (p.nameUr || "").toLowerCase();
     const pSku = (p.sku || "").toLowerCase();
 
-    if (pName && (q === pName || q.includes(pName))) {
+    if (pName && (q === pName || q.includes(pName) || pName.includes(q))) {
       matchedProducts.push(p);
       continue;
     }
-    if (pUr && (q === pUr || q.includes(pUr))) {
+    if (pUr && (q === pUr || q.includes(pUr) || pUr.includes(q))) {
       matchedProducts.push(p);
       continue;
     }
-    if (pSku && q.includes(pSku)) {
+    if (pSku && (q.includes(pSku) || pSku.includes(q))) {
       matchedProducts.push(p);
       continue;
     }
   }
 
   if (matchedProducts.length === 0 && words.length > 0) {
+    // Check keywords and synonyms
     matchedProducts = activeProds.filter(p => {
       const pName = (p.name || "").toLowerCase();
       const pUr = (p.nameUr || "").toLowerCase();
       const pWords = pName.split(/\s+/).filter(w => w.length >= 2);
       const pUrWords = pUr.split(/\s+/).filter(w => w.length >= 2);
 
-      return words.some(w => 
-        pWords.some(pw => pw === w || (w.length >= 4 && (pw.startsWith(w) || w.startsWith(pw)))) ||
-        pUrWords.some(pu => pu === w || (w.length >= 4 && (pu.startsWith(w) || w.startsWith(pu))))
-      );
+      return words.some(w => {
+        const syns = synonymsMap[w] || [];
+        return (
+          pWords.some(pw => pw === w || (w.length >= 3 && (pw.startsWith(w) || w.startsWith(pw)))) ||
+          pUrWords.some(pu => pu === w || (w.length >= 3 && (pu.startsWith(w) || w.startsWith(pu)))) ||
+          pName.includes(w) ||
+          pUr.includes(w) ||
+          syns.some(s => pName.includes(s) || pUr.includes(s))
+        );
+      });
     });
   }
 
@@ -530,6 +707,33 @@ function generateDynamicClientResponse(query, lang, products = [], currency = "U
 }
 
 const FAQ_PRESETS = [
+  {
+    id: "whats_new",
+    icon: "✨",
+    group: "Features",
+    labelEn: "What's New on VoxCart",
+    labelUr: "ویب سائٹ پر نیا کیا ہے؟",
+    queryEn: "What's new on the website and what new features were added?",
+    queryUr: "والکس کارٹ ویب سائٹ پر نیا کیا ہے اور کون سے نئے فیچرز شامل کیے گئے ہیں؟"
+  },
+  {
+    id: "product_compare",
+    icon: "⚖️",
+    group: "Shopping",
+    labelEn: "Compare Products (Difference)",
+    labelUr: "پروڈکٹس کا موازنہ و فرق",
+    queryEn: "What is the difference between Whole Milk and Cheddar Cheese?",
+    queryUr: "دودھ اور پنیر میں کیا فرق اور قیمت کا موازنہ ہے؟"
+  },
+  {
+    id: "recommendations",
+    icon: "🌟",
+    group: "Shopping",
+    labelEn: "Which product is best for me?",
+    labelUr: "میرے لیے بہترین پروڈکٹس کون سے ہیں؟",
+    queryEn: "Which product would be best for me and what do you recommend?",
+    queryUr: "میرے لیے کون سی پروڈکٹ بہترین رہے گی؟"
+  },
   {
     id: "store_types",
     icon: "🏷️",
@@ -726,27 +930,30 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
   // Helper for user-scoped storage keys
   const getUserStorageKey = (u) => u ? `voxcart_chatbot_messages_${u.id || u.email}` : "voxcart_chatbot_messages_guest";
 
-  // Initial welcome message (predefined questions removed from initial view, accessible in FAQs menu)
+  // Initial welcome message with suggestions
   const getInitialMessages = () => [
     {
       id: "msg_welcome",
       sender: "bot",
       text: isUr 
-        ? "سلام! 👋 میں والکس کارٹ کا **VoxBot AI** اسسٹنٹ ہوں۔ میں آپ کو اسٹور کے تمام پروڈکٹس، صوتی شاپنگ، ریسیپیز، کسٹمر فیڈبیک، اور آرڈر ٹریکنگ سے متعلق سوالات کے درست جوابات فراہم کرتا ہوں۔ آپ اوپر موجود **FAQs** مینو سے تمام کیٹیگریز اور اکثر پوچھے گئے سوالات دیکھ سکتے ہیں یا اپنا سوال براہِ راست ٹائپ کریں!"
-        : "Hi there! 👋 I'm **VoxBot**, your VoxCart AI Shopping Assistant. I'm fully website-aware and can accurately answer any questions about our products, live stock, recipes, customer feedback, voice shopping, policies, and order tracking. You can browse categorized questions in the **FAQs** menu above, or type any question directly!",
+        ? "سلام! 👋 میں **ووکسی (Voxy)** ہوں، آپ کا والکس کارٹ AI شاپنگ اسسٹنٹ۔ میں اسٹور کے تمام پروڈکٹس، صوتی شاپنگ، ریسیپیز، کسٹمر فیڈبیک، اور آرڈر ٹریکنگ سے متعلق سوالات کے درست جوابات فراہم کرتا ہوں۔ آپ نیچے دیے گئے تجاویز سے شروع کر سکتے ہیں یا اوپر موجود **FAQs** مینو دیکھ سکتے ہیں!"
+        : "Hi 👋 I'm **Voxy**, your VoxCart AI shopping buddy! I'm fully website-aware and can accurately assist you with products, live stock, smart recipes, customer feedback, voice shopping, policies, and order tracking. How can I help you today?",
+      suggestions: isUr ? [
+        { label: "🥛 دودھ اور انڈے شامل کریں", text: "کارٹ میں 1 لیٹر دودھ اور 12 انڈے شامل کریں" },
+        { label: "📋 میری شاپنگ لسٹ استعمال کریں", text: "میری شاپنگ لسٹ کے مطابق اشیاء دکھائیں" },
+        { label: "🚚 میرا آرڈر ٹریک کریں", text: "میرا حالیہ آرڈر ٹریک کریں" }
+      ] : [
+        { label: "🥛 Add milk and eggs", text: "Add 1L fresh milk and 12 eggs to cart" },
+        { label: "📋 Use my shopping list", text: "Show and use my shopping list items" },
+        { label: "🚚 Track my order", text: "Track my recent order status" }
+      ],
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ];
 
   const sanitizeLoadedMessages = (msgs) => {
     if (!Array.isArray(msgs) || msgs.length === 0) return getInitialMessages();
-    return msgs.map(m => {
-      if (m.id === "msg_welcome") {
-        const { suggestions, ...rest } = m;
-        return rest;
-      }
-      return m;
-    });
+    return msgs;
   };
 
   const [messages, setMessages] = useState(() => {
@@ -817,6 +1024,21 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
     }
   }, [messages, isOpen, isTyping]);
 
+  // Reset chat on close so that reopening starts a completely fresh conversation
+  useEffect(() => {
+    if (!isOpen) {
+      setMessages(getInitialMessages());
+      setShowFaqDrawer(false);
+      setInput("");
+      const storageKey = getUserStorageKey(user);
+      try {
+        localStorage.removeItem(storageKey);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [isOpen, isUr]);
+
   // Focus input when chat window opens
   useEffect(() => {
     if (isOpen) {
@@ -851,6 +1073,8 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
     setInput("");
     setIsTyping(true);
 
+    const startTime = Date.now();
+
     try {
       // Build history payload for context-awareness
       const chatHistory = messages.map(m => ({
@@ -872,6 +1096,12 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
         botReplyText = res.reply;
       } else {
         botReplyText = generateDynamicClientResponse(query, lang, products, currency, messages);
+      }
+
+      // Ensure minimum thinking beat for natural mascot animation
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        await new Promise(r => setTimeout(r, 800 - elapsed));
       }
 
       // Handle extracted user categories
@@ -984,7 +1214,7 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[9999] font-sans select-none print:hidden">
+    <div className="font-sans select-none print:hidden">
       
       {/* 1. FLOATING CHAT WINDOW POPUP */}
       {isOpen && (
@@ -996,15 +1226,15 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
           <div className="bg-gradient-to-r from-purple-900/90 via-slate-900 to-indigo-900/90 p-3.5 px-4 border-b border-white/10 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 border border-purple-400/40 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
-                  <Bot className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 border border-cyan-400/40 p-0.5 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0 overflow-hidden">
+                  <img src={voxyHappy} alt="Voxy" className="w-full h-full object-contain drop-shadow" />
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full" title="VoxBot Online" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full" title="Voxy Online" />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-sm font-bold text-white tracking-wide">
-                    {isUr ? "والکس باٹ AI" : "VoxBot AI"}
+                    {isUr ? "ووکسی AI" : "Voxy AI"}
                   </h3>
                   <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-400/30 font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
                     <Sparkles className="w-2.5 h-2.5 text-pink-300" />
@@ -1013,7 +1243,7 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
                 </div>
                 <p className="text-[10px] text-white/50 font-medium flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                  {isUr ? "آن لائن • والکس کارٹ ہیلپ" : "Online • VoxCart Shopping Guide"}
+                  {isUr ? "آن لائن • والکس کارٹ شاپنگ گائیڈ" : "Online • VoxCart Shopping Guide"}
                 </p>
               </div>
             </div>
@@ -1054,9 +1284,9 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
           {showFaqDrawer ? (
             <div 
               ref={faqDrawerRef}
-              className="flex-1 p-3 bg-slate-950/95 overflow-y-auto space-y-3 scrollbar-thin scrollbar-thumb-purple-500/30 animate-in fade-in duration-150"
+              className="flex-1 p-3 bg-slate-950/95 flex flex-col min-h-0 space-y-3 animate-in fade-in duration-150"
             >
-              <div className="flex items-center justify-between pb-1 border-b border-white/10">
+              <div className="flex items-center justify-between pb-1 border-b border-white/10 shrink-0">
                 <div className="flex items-center gap-1.5">
                   <HelpCircle className="w-4 h-4 text-purple-400" />
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider">
@@ -1072,7 +1302,7 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
               </div>
 
               {/* FAQ Search Bar */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-2.5" />
                 <input
                   type="text"
@@ -1084,7 +1314,7 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
               </div>
 
               {/* FAQ Group & Types Filters with Horizontal Scrolling */}
-              <div className="relative flex items-center gap-1">
+              <div className="relative flex items-center gap-1 shrink-0">
                 <button
                   type="button"
                   onClick={() => scrollFaqToolbar("left")}
@@ -1123,8 +1353,8 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
                 </button>
               </div>
 
-              {/* Scrollable FAQ List */}
-              <div className="space-y-1.5 max-h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 pr-1">
+              {/* Single smooth scrollable FAQ List */}
+              <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 pr-1">
                 {FAQ_PRESETS.filter(faq => {
                   const matchesGroup = faqSelectedGroup === "All" || faq.group === faqSelectedGroup;
                   const qTerm = faqSearchQuery.toLowerCase();
@@ -1173,10 +1403,10 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
               >
                 <div className={`flex gap-2 max-w-[88%] ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}>
                   
-                  {/* Bot Avatar Icon */}
+                  {/* Bot Mascot Avatar Icon */}
                   {msg.sender === "bot" && (
-                    <div className="w-7 h-7 rounded-xl bg-purple-900/80 border border-purple-500/40 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                      <Bot className="w-3.5 h-3.5 text-purple-300" />
+                    <div className="w-7 h-7 rounded-full bg-cyan-950/80 border border-cyan-500/40 p-0.5 flex items-center justify-center shrink-0 mt-0.5 shadow-sm overflow-hidden">
+                      <img src={voxyHappy} alt="Voxy" className="w-full h-full object-contain" />
                     </div>
                   )}
 
@@ -1239,16 +1469,21 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
               </div>
             ))}
 
-            {/* TYPING INDICATOR */}
+            {/* TYPING INDICATOR WITH VOXY THINKING MASCOT */}
             {isTyping && (
               <div className="flex items-center gap-2 text-slate-400 text-xs animate-in fade-in">
-                <div className="w-7 h-7 rounded-xl bg-purple-900/80 border border-purple-500/40 flex items-center justify-center shrink-0">
-                  <Bot className="w-3.5 h-3.5 text-purple-300 animate-pulse" />
+                <div className="w-8 h-8 rounded-full bg-cyan-950/80 border border-cyan-400/50 p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+                  <img src={voxyThinking} alt="Voxy Thinking" className="w-full h-full object-contain animate-pulse" />
                 </div>
-                <div className="bg-slate-800/90 border border-white/10 rounded-2xl rounded-tl-none p-3 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="bg-slate-800/90 border border-cyan-500/20 rounded-2xl rounded-tl-none px-3.5 py-2.5 flex items-center gap-2">
+                  <span className="text-[11px] text-cyan-300 font-medium">
+                    {isUr ? "ووکسی سوچ رہا ہے..." : "Voxy is thinking..."}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
                 </div>
               </div>
             )}
@@ -1269,7 +1504,7 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isUr ? "والکس باٹ سے سوال پوچھیں..." : "Ask VoxBot about products, orders, policies..."}
+                placeholder={isUr ? "ووکسی سے سوال پوچھیں..." : "Ask Voxy about products, recipes, policies..."}
                 disabled={isTyping}
                 className="flex-1 bg-white/5 border border-white/15 focus:border-purple-400 rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-white/40 focus:outline-none transition"
               />
@@ -1282,73 +1517,21 @@ export default function AIChatbotWidget({ lang = "en", currency = "USD", activeT
               </button>
             </form>
             <div className="mt-2 flex items-center justify-between text-[9px] text-white/30 font-medium px-1">
-              <span>VoxCart Trained AI Guide</span>
+              <span>Voxy AI Shopping Assistant</span>
               <span className="text-purple-400/70 font-mono">24/7 Live Support</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. CUTE FLOATING WIDGET BUTTON TRIGGER */}
-      <div className="relative flex items-center justify-end">
-        
-        {/* Floating Teaser Teaser Badge when closed */}
-        {!isOpen && showTeaser && (
-          <div 
-            onClick={() => setIsOpen(true)}
-            className="absolute right-16 bottom-1 bg-slate-900/90 backdrop-blur-md border border-purple-500/30 text-white rounded-2xl p-2.5 px-3.5 shadow-xl text-xs font-medium cursor-pointer whitespace-nowrap animate-bounce hover:scale-105 transition flex items-center gap-2 group"
-          >
-            <div className="w-6 h-6 rounded-lg bg-purple-900/80 border border-purple-400/40 flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5 text-purple-300" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-purple-200">
-                {isUr ? "کوئی سوال ہے؟" : "Have a question?"}
-              </p>
-              <p className="text-[10px] text-white/60">
-                {isUr ? "VoxBot AI سے پوچھیں!" : "Ask VoxBot AI!"}
-              </p>
-            </div>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowTeaser(false);
-              }}
-              className="text-white/40 hover:text-white ml-1 p-0.5"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-
-        {/* Main Floating Circle Button */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          aria-label="Open VoxBot AI Chatbot"
-          className={`relative group w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 text-white shadow-[0_10px_25px_rgba(147,51,234,0.5)] hover:shadow-[0_15px_35px_rgba(147,51,234,0.7)] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 border-2 border-white/20 overflow-hidden ${
-            isOpen ? "rotate-90 bg-slate-800" : ""
-          }`}
-        >
-          {/* Pulsing ring background glow */}
-          <span className="absolute inset-0 rounded-full bg-purple-500/40 animate-ping pointer-events-none opacity-75" />
-
-          {/* Unread dot */}
-          {hasUnread && !isOpen && (
-            <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 border-2 border-slate-900 rounded-full flex items-center justify-center text-[9px] font-bold text-white z-10 animate-pulse">
-              1
-            </span>
-          )}
-
-          {isOpen ? (
-            <X className="w-6 h-6 text-white" />
-          ) : (
-            <div className="relative flex items-center justify-center">
-              <Bot className="w-7 h-7 text-white group-hover:rotate-12 transition duration-200" />
-              <Sparkles className="w-3.5 h-3.5 text-pink-300 absolute -top-1 -right-1.5 animate-pulse" />
-            </div>
-          )}
-        </button>
-      </div>
+      {/* 2. VOXY 3D MASCOT AVATAR FLOATING TRIGGER */}
+      <VoxyAvatar 
+        state={isTyping ? "thinking" : isOpen ? "happy" : "idle"}
+        onClick={() => setIsOpen(!isOpen)}
+        showTeaser={!isOpen && showTeaser}
+        lang={lang}
+        hasUnread={hasUnread && !isOpen}
+      />
 
     </div>
   );

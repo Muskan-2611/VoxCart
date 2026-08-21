@@ -12,7 +12,7 @@ export default function CartSidebar({
   isOnline,
   products
 }) {
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
 
   // Resolve details of cart item products directly from parent inventory
   const resolvedItems = cartItems.map(item => {

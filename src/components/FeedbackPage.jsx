@@ -304,9 +304,13 @@ export default function FeedbackPage({ lang, user, onNotify }) {
                   required
                   rows={5}
                   placeholder={
-                    isUr 
-                      ? "براہ کرم اپنی شکایت، فیڈ بیک یا تجویز کی تفصیل یہاں لکھیں..."
-                      : "Please write all relevant details here..."
+                    feedbackType === "complaint"
+                      ? (isUr 
+                          ? "براہ کرم پروڈکٹ کا SKU نمبر درج کریں اور پھر اپنی شکایت کی تفصیل لکھیں۔" 
+                          : "Please enter the product SKU number and then describe your complaint.")
+                      : (isUr 
+                          ? "براہ کرم اپنی شکایت، فیڈ بیک یا تجویز کی تفصیل یہاں لکھیں..." 
+                          : "Please write all relevant details here...")
                   }
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -369,7 +373,7 @@ export default function FeedbackPage({ lang, user, onNotify }) {
               <span className="text-2xl">📞</span>
               <h4 className="font-bold text-white text-sm">{isUr ? "براہ راست رابطہ" : "Need Instant Help?"}</h4>
               <p className="text-xs text-white/50 leading-relaxed">
-                {isUr ? "کسی بھی ہنگامی مسئلے کے لیے ووکس بوٹ AI سے لائیو چیٹ کریں یا ڈیش بورڈ استعمال کریں۔" : "For live instant assistance with active orders, ask VoxBot AI in the bottom right corner!"}
+                {isUr ? "کسی بھی ہنگامی مسئلے کے لیے ووکسی AI سے لائیو چیٹ کریں یا ڈیش بورڈ استعمال کریں۔" : "For live instant assistance with active orders, ask Voxy AI in the bottom right corner!"}
               </p>
             </div>
           </div>

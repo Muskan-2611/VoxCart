@@ -14,27 +14,56 @@ import LandingPage from "./components/LandingPage.jsx";
 import AIChatbotWidget from "./components/AIChatbotWidget.jsx";
 import FeedbackPage from "./components/FeedbackPage.jsx";
 import { validateStrongPassword } from "./utils/passwordValidator";
-import { Lock, Mail, User, Shield, KeyRound, CornerDownRight, Heart, Sparkles, Wifi, AlertCircle, ShoppingCart, Eye, EyeOff } from "lucide-react";
+import confetti from "./utils/confetti";
+import { Lock, Mail, User, Shield, KeyRound, CornerDownRight, Heart, Sparkles, Wifi, AlertCircle, ShoppingCart, Eye, EyeOff, CheckCircle, PartyPopper } from "lucide-react";
 
 export default function App() {
   // --- 1. CORE BILINGUAL STATES
-  const [lang, setLang] = useState(() => localStorage.getItem("voxcart_display_language") || "en");
-  const t = TRANSLATIONS[lang];
+  const [lang, setLang] = useState(() => {
+    try {
+      const saved = localStorage.getItem("voxcart_display_language");
+      return (saved === "ur" || saved === "en") ? saved : "en";
+    } catch (e) {
+      return "en";
+    }
+  });
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
 
-  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem("voxcart_active_tab") || "home");
-  const [currency, setCurrency] = useState(() => localStorage.getItem("voxcart_display_currency") || "USD");
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return sessionStorage.getItem("voxcart_active_tab") || "home";
+    } catch (e) {
+      return "home";
+    }
+  });
+  const [currency, setCurrency] = useState(() => {
+    try {
+      return localStorage.getItem("voxcart_display_currency") || "USD";
+    } catch (e) {
+      return "USD";
+    }
+  });
   const [ratesVersion, setRatesVersion] = useState(0);
   const [pendingCheckoutData, setPendingCheckoutData] = useState(null);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
 
   useEffect(() => {
-    sessionStorage.setItem("voxcart_active_tab", activeTab);
+    try {
+      sessionStorage.setItem("voxcart_active_tab", activeTab);
+    } catch (e) {}
   }, [activeTab]);
 
   // --- 2. USER SESSION STATES (Pure server-synced, session-token cached)
   const [user, setUser] = useState(() => {
-    const cached = sessionStorage.getItem("voxcart_session");
-    return cached ? JSON.parse(cached) : null;
+    try {
+      const cached = sessionStorage.getItem("voxcart_session");
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
   });
 
   const [authMode, setAuthMode] = useState("login"); // "login" | "register" | "reset"
@@ -78,6 +107,39 @@ export default function App() {
     }
   });
   const [userCategories, setUserCategories] = useState([]);
+  const [orderPlacedModal, setOrderPlacedModal] = useState(null);
+
+  // Confetti celebratory animation from the sides
+  const triggerSideCelebratoryConfetti = () => {
+    try {
+      const end = Date.now() + 2500;
+      const colors = ["#a855f7", "#ec4899", "#3b82f6", "#10b981", "#f59e0b", "#6366f1"];
+
+      const frame = () => {
+        confetti({
+          particleCount: 4,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.7 },
+          colors
+        });
+        confetti({
+          particleCount: 4,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.7 },
+          colors
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    } catch (e) {
+      console.log("Confetti animation error:", e);
+    }
+  };
 
   // Log streams for real-time diagnostic voice commands
   const [voiceLogs, setVoiceLogs] = useState([
@@ -293,7 +355,7 @@ export default function App() {
 
   // Verification code trigger helper
   const handleTriggerSendVerificationCode = async (targetEmail) => {
-    const emailToUse = targetEmail || loginEmail;
+    const emailToUse = targetEmail || (authMode === "register" ? regEmail : loginEmail);
     if (!emailToUse || !emailToUse.trim()) {
       setAuthError("Please enter your email address first.");
       return false;
@@ -315,44 +377,33 @@ export default function App() {
   };
 
   const handleResendVerificationCode = async () => {
-    await handleTriggerSendVerificationCode(loginEmail);
+    const targetEmail = authMode === "register" ? regEmail : loginEmail;
+    await handleTriggerSendVerificationCode(targetEmail);
   };
 
-  // Login execution handler with 2-step verification
+  // Authentication submission handler
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
     try {
       if (authMode === "login") {
-        if (!loginEmail) {
+        if (!loginEmail || !loginEmail.trim()) {
           setAuthError("Please enter your email address.");
           return;
         }
-
-        // Step 1: If verification code step is not active yet, trigger verification code delivery
-        if (!verificationStep) {
-          await handleTriggerSendVerificationCode(loginEmail);
-          return;
-        }
-
-        // Step 2: Submit with password & verification code
         if (!loginPassword) {
           setAuthError("Please enter your password.");
           return;
         }
 
-        if (!verificationCodeInput || !verificationCodeInput.trim()) {
-          setAuthError("Please enter the 6-digit verification code sent to your email.");
-          return;
-        }
-
-        const loggedUser = await api.login(loginEmail, loginPassword, verificationCodeInput.trim());
+        // Direct normal login using email & password
+        const loggedUser = await api.login(loginEmail.trim(), loginPassword);
         sessionStorage.setItem("voxcart_session", JSON.stringify(loggedUser));
         setUser(loggedUser);
         setVerificationStep(false);
         setVerificationCodeInput("");
         setCodeSentNotice("");
-        showToast(`Welcome back, ${loggedUser.name}! Authentication verified.`, "success");
+        showToast(`Welcome back, ${loggedUser.name}!`, "success");
       } else if (authMode === "reset") {
         if (!resetEmail || !resetPassword) {
           setAuthError("Please fill in email and new password.");
@@ -363,14 +414,17 @@ export default function App() {
           setAuthError(passVal.message);
           return;
         }
-        await api.resetPassword(resetEmail, resetPassword);
+        await api.resetPassword(resetEmail.trim(), resetPassword);
         showToast("Password reset successfully! You can now log in with your new password.", "success");
         setAuthMode("login");
-        setLoginEmail(resetEmail);
+        setLoginEmail(resetEmail.trim());
         setLoginPassword("");
         setResetEmail("");
         setResetPassword("");
+        setVerificationStep(false);
+        setVerificationCodeInput("");
       } else {
+        // Registration Flow: requires email verification
         if (!regName || !regEmail || !regPassword) {
           setAuthError("All credentials are required.");
           return;
@@ -380,8 +434,23 @@ export default function App() {
           setAuthError(passVal.message);
           return;
         }
-        await api.register(regName, regEmail, regPassword);
-        setLoginEmail(regEmail);
+
+        // Step 1: Send verification code to email
+        if (!verificationStep) {
+          await handleTriggerSendVerificationCode(regEmail.trim());
+          return;
+        }
+
+        // Step 2: Validate verification code and create account
+        if (!verificationCodeInput || !verificationCodeInput.trim()) {
+          setAuthError("Please enter the 6-digit verification code sent to your email.");
+          return;
+        }
+
+        const registeredUser = await api.register(regName.trim(), regEmail.trim(), regPassword, verificationCodeInput.trim());
+        sessionStorage.setItem("voxcart_session", JSON.stringify(registeredUser));
+        setUser(registeredUser);
+        setLoginEmail(regEmail.trim());
         setLoginPassword("");
         setRegName("");
         setRegEmail("");
@@ -389,8 +458,7 @@ export default function App() {
         setVerificationStep(false);
         setVerificationCodeInput("");
         setCodeSentNotice("");
-        setAuthMode("login");
-        showToast("Account successfully registered! Please log in with your account credentials.", "success");
+        showToast(`Welcome to VoxCart, ${registeredUser.name}! Your account is verified and ready.`, "success");
       }
     } catch (err) {
       setAuthError(err.message || "Authentication failed. Please check your credentials.");
@@ -631,6 +699,8 @@ export default function App() {
       });
       setCartItems([]);
       setPendingCheckoutData(null);
+      setOrderPlacedModal(orderResult);
+      triggerSideCelebratoryConfetti();
       showToast(`${t.orderPlaced} ${formatPrice(payload.total, currency, lang)} 🎉`, "success");
       setActiveTab("orders");
     } catch (err) {
@@ -656,6 +726,8 @@ export default function App() {
       });
       setCartItems([]);
       setPendingCheckoutData(null);
+      setOrderPlacedModal(fallbackOrder);
+      triggerSideCelebratoryConfetti();
       showToast(`${t.orderPlaced} ${formatPrice(payload.total, currency, lang)} 🎉`, "success");
       setActiveTab("orders");
     }
@@ -689,10 +761,10 @@ export default function App() {
 
       {user === null ? (
         /* ================= AUTHENTICATION / SIGN IN SCREEN ================= */
-        <div className="flex-1 flex items-center justify-center bg-[#05060f] px-4 py-12 relative overflow-hidden">
+        <div className="flex-1 flex items-center justify-center bg-transparent px-4 py-12 relative overflow-hidden">
           {/* Neon mesh circles floating background */}
           <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-purple-500/10 rounded-full blur-[130px] pointer-events-none" />
-          <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[130px] pointer-events-none" />
+          <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[130px] pointer-events-none" />
 
           <div className="w-full max-w-lg bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl relative z-10">
             {/* Header branding */}
@@ -716,8 +788,8 @@ export default function App() {
 
             <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
               
-              {/* If Verification Step is Active in Login Mode */}
-              {authMode === "login" && verificationStep ? (
+              {/* If Verification Step is Active in Register Mode */}
+              {authMode === "register" && verificationStep ? (
                 <>
                   <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 flex flex-col gap-2 text-xs">
                     <div className="flex items-center gap-2 font-bold text-purple-300">
@@ -725,7 +797,7 @@ export default function App() {
                       <span>Email Verification Code Sent!</span>
                     </div>
                     <p className="text-white/70 leading-relaxed">
-                      A unique 6-digit security verification code has been sent to <span className="font-bold text-white">{loginEmail}</span>. Please enter it below.
+                      A unique 6-digit verification code has been sent to <span className="font-bold text-white">{regEmail}</span>. Please enter it below to verify your email and complete account creation.
                     </p>
                     {codeSentNotice && (
                       <div className="bg-slate-950/80 p-2.5 rounded-xl border border-purple-500/20 font-mono text-purple-200 text-[11px] break-all">
@@ -753,9 +825,10 @@ export default function App() {
 
                   <button
                     type="submit"
-                    className="mt-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-slate-950 font-black py-3.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 active:scale-97 cursor-pointer select-none"
+                    className="mt-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-slate-950 font-black py-3.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 active:scale-97 cursor-pointer select-none flex items-center justify-center gap-2"
                   >
-                    Verify & Complete Sign In
+                    <CheckCircle size={16} />
+                    <span>Verify Code & Complete Registration</span>
                   </button>
 
                   <div className="flex items-center justify-between text-xs text-white/50 pt-2 border-t border-white/10">
@@ -773,7 +846,7 @@ export default function App() {
                       onClick={() => { setVerificationStep(false); setVerificationCodeInput(""); setAuthError(""); }}
                       className="text-white/60 hover:text-white cursor-pointer"
                     >
-                      Change Email / Password
+                      Edit Information
                     </button>
                   </div>
                 </>
@@ -798,20 +871,7 @@ export default function App() {
                   )}
 
                   <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.email}</label>
-                      {authMode === "login" && !verificationStep && (
-                        <button
-                          type="button"
-                          onClick={() => handleTriggerSendVerificationCode(loginEmail)}
-                          disabled={sendingCode || !loginEmail}
-                          className="text-xs text-purple-300 font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-40"
-                        >
-                          <Mail size={12} />
-                          {sendingCode ? "Sending Code..." : "Send Verification Code"}
-                        </button>
-                      )}
-                    </div>
+                    <label className="text-xs font-bold text-white/40 uppercase tracking-wider">{t.email}</label>
                     <div className="relative">
                       <input
                         type="email"
@@ -884,10 +944,10 @@ export default function App() {
                     {sendingCode 
                       ? "Sending Security Code..." 
                       : authMode === "login" 
-                      ? "Send Verification Code & Login" 
+                      ? (t.authLogin || "Sign In")
                       : authMode === "reset" 
                       ? "Reset Password" 
-                      : t.authSubmitRegister}
+                      : (t.authSubmitRegister || "Verify Email & Register")}
                   </button>
                 </>
               )}
@@ -898,7 +958,7 @@ export default function App() {
                 <>
                   <span>{t.noAccount} </span>
                   <button 
-                    onClick={() => { setAuthError(""); setAuthMode("register"); }}
+                    onClick={() => { setAuthError(""); setVerificationStep(false); setVerificationCodeInput(""); setAuthMode("register"); }}
                     className="text-purple-300 font-bold hover:underline cursor-pointer"
                   >
                     {t.newAccount}
@@ -906,7 +966,7 @@ export default function App() {
                 </>
               ) : authMode === "reset" ? (
                 <button 
-                  onClick={() => { setAuthError(""); setAuthMode("login"); }}
+                  onClick={() => { setAuthError(""); setVerificationStep(false); setVerificationCodeInput(""); setAuthMode("login"); }}
                   className="text-purple-300 font-bold hover:underline cursor-pointer"
                 >
                   Back to Login
@@ -915,7 +975,7 @@ export default function App() {
                 <>
                   <span>{t.alreadyAccount} </span>
                   <button
-                    onClick={() => { setAuthError(""); setAuthMode("login"); }}
+                    onClick={() => { setAuthError(""); setVerificationStep(false); setVerificationCodeInput(""); setAuthMode("login"); }}
                     className="text-purple-300 font-bold hover:underline cursor-pointer"
                   >
                     {t.authLogin}
@@ -924,13 +984,11 @@ export default function App() {
               )}
             </div>
 
-            {/* Login screen spacing */}
-
           </div>
         </div>
       ) : (
         /* ================= PRIMARY APP WORKSPACE SCREEN ================= */
-        <div className="flex-1 flex flex-col justify-start bg-[#05060f]">
+        <div className="flex-1 flex flex-col justify-start bg-transparent">
           
           <Navbar
             user={user}
@@ -1185,6 +1243,74 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* ORDER PLACED CELEBRATION CONFIRMATION MODAL */}
+      {orderPlacedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#0f121d] border border-emerald-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden">
+            {/* Ambient background glow */}
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Celebratory Icon */}
+            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+              <CheckCircle size={44} className="animate-bounce" />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
+              <PartyPopper size={13} />
+              <span>{lang === "ur" ? "آرڈر کامیابی سے موصول ہو گیا" : "Order Placed Successfully"}</span>
+            </div>
+
+            <h3 className="text-2xl font-black text-white mb-2">
+              {lang === "ur" ? "مبارک ہو! آپ کا آرڈر منظور ہو گیا" : "Thank You for Your Order!"}
+            </h3>
+
+            <p className="text-white/60 text-xs sm:text-sm mb-6 leading-relaxed">
+              {lang === "ur"
+                ? "آپ کا آرڈر موصول ہو چکا ہے اور ہماری ٹیم ترسیل کی تیاری کر رہی ہے۔"
+                : "Your order has been recorded and is being prepared for immediate dispatch."}
+            </p>
+
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left text-xs mb-6 space-y-2">
+              <div className="flex justify-between items-center text-white/70">
+                <span className="text-white/40">{lang === "ur" ? "آرڈر نمبر:" : "Order ID:"}</span>
+                <span className="font-mono font-bold text-purple-300">{orderPlacedModal.id}</span>
+              </div>
+              <div className="flex justify-between items-center text-white/70">
+                <span className="text-white/40">{lang === "ur" ? "کل رقم:" : "Total Amount:"}</span>
+                <span className="font-bold text-emerald-400">{formatPrice(orderPlacedModal.total, currency, lang)}</span>
+              </div>
+              <div className="flex justify-between items-center text-white/70">
+                <span className="text-white/40">{lang === "ur" ? "ادائیگی کا طریقہ:" : "Payment Method:"}</span>
+                <span className="font-medium text-white/90">{orderPlacedModal.paymentMethod || "Cash on Delivery"}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderPlacedModal(null);
+                  setActiveTab("orders");
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs uppercase tracking-wider transition cursor-pointer shadow-lg shadow-purple-600/30"
+              >
+                {lang === "ur" ? "میرے آرڈرز دیکھیں" : "View My Orders"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderPlacedModal(null);
+                  setActiveTab("catalog");
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs uppercase tracking-wider transition cursor-pointer border border-white/10"
+              >
+                {lang === "ur" ? "مزید خریداری کریں" : "Continue Shopping"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CUTE AI CHATBOT FIXED FLOATING WIDGET (VISIBLE ONLY FOR LOGGED-IN USERS ON USER-SIDE TABS) */}
       {user && activeTab !== "admin" && (

@@ -10,7 +10,7 @@ export default function FavouritesView({
   onAddFromCatalog,
   onToggleFavourite
 }) {
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS[lang] || TRANSLATIONS["en"] || {};
 
   // Resolve matching products
   const resolvedFavs = products.filter(p => favourites.includes(p.id));

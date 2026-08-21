@@ -1297,61 +1297,22 @@ async function startServer() {
     });
   });
 
-  // API: Authentication Login
+  // API: Authentication Login (Normal email + password login)
   app.post("/api/auth/login", (req, res) => {
-    const { email, password, verificationCode } = req.body;
+    const { email, password } = req.body;
     if (!email) {
       return res.status(400).json({ error: "Email address is required" });
     }
     const cleanEmail = String(email).trim().toLowerCase();
     const db = getDB();
-    let user = db.users.find(u => u.email.toLowerCase().trim() === cleanEmail);
+    const user = db.users.find(u => u.email.toLowerCase().trim() === cleanEmail);
 
     if (!user) {
-      // Auto-create user if valid verification code is supplied during login
-      if (verificationCode) {
-        const record = pendingVerifications.get(cleanEmail);
-        if (record && record.code === String(verificationCode).trim() && Date.now() <= record.expiresAt) {
-          const newUser = {
-            id: `usr_${Math.random().toString(36).substr(2, 9)}`,
-            name: cleanEmail.split("@")[0] || "User",
-            email: cleanEmail,
-            password: password ? hashPassword(password) : hashPassword("Default123!"),
-            role: "customer"
-          };
-          db.users.push(newUser);
-          saveDB(db);
-          user = newUser;
-          pendingVerifications.delete(cleanEmail);
-        } else {
-          return res.status(401).json({ error: "Invalid verification code or email address not found." });
-        }
-      } else {
-        return res.status(401).json({ error: "Invalid email or password." });
-      }
-    } else {
-      // User exists, check password
-      if (password && !verifyPassword(password, user.password)) {
-        return res.status(401).json({ error: "Invalid password for this account." });
-      }
+      return res.status(401).json({ error: "Account not found with this email. Please create an account." });
+    }
 
-      // If verificationCode is supplied alongside login, validate it
-      if (verificationCode) {
-        const record = pendingVerifications.get(cleanEmail);
-        if (!record) {
-          return res.status(400).json({ error: "Verification code expired or not requested. Please request a new code." });
-        }
-        if (Date.now() > record.expiresAt) {
-          pendingVerifications.delete(cleanEmail);
-          return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
-        }
-        if (record.code !== String(verificationCode).trim()) {
-          record.attempts += 1;
-          return res.status(400).json({ error: "Incorrect verification code. Please enter the valid code." });
-        }
-        // Validated! Clear code
-        pendingVerifications.delete(cleanEmail);
-      }
+    if (password && !verifyPassword(password, user.password)) {
+      return res.status(401).json({ error: "Invalid password for this account." });
     }
 
     res.json({
@@ -1363,10 +1324,11 @@ async function startServer() {
     });
   });
 
+  // API: User Registration with required Email Verification
   app.post("/api/auth/register", (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, email, password, verificationCode, code } = req.body;
     if (!name || !email || !password) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return res.status(400).json({ error: "Name, email, and password are all required." });
     }
 
     const passCheck = isStrongPassword(String(password));
@@ -1381,12 +1343,31 @@ async function startServer() {
       return res.status(400).json({ error: "An account with this email address already exists. Please log in." });
     }
 
+    const verifyCode = verificationCode || code;
+    if (verifyCode) {
+      const record = pendingVerifications.get(cleanEmail);
+      if (!record) {
+        return res.status(400).json({ error: "Verification code expired or not requested. Please request a new code." });
+      }
+      if (Date.now() > record.expiresAt) {
+        pendingVerifications.delete(cleanEmail);
+        return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
+      }
+      if (record.code !== String(verifyCode).trim()) {
+        record.attempts += 1;
+        return res.status(400).json({ error: "Incorrect verification code. Please enter the valid 6-digit code." });
+      }
+      // Validated
+      pendingVerifications.delete(cleanEmail);
+    }
+
     const newUser = {
       id: "usr_" + Math.random().toString(36).substring(2, 11),
       name: String(name).trim(),
       email: cleanEmail,
       password: hashPassword(String(password)),
       role: "user",
+      isEmailVerified: true,
       avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80",
       createdAt: new Date().toISOString()
     };
@@ -1397,7 +1378,8 @@ async function startServer() {
       name: newUser.name,
       email: newUser.email,
       role: newUser.role,
-      avatar: newUser.avatar
+      avatar: newUser.avatar,
+      isEmailVerified: true
     });
   });
 
@@ -2810,7 +2792,7 @@ async function startServer() {
       name: name.trim(),
       nameUr: nameUr || name,
       icon: icon || "✨",
-      description: description || "Auto-extracted by VoxBot AI based on user preferences",
+      description: description || "Auto-extracted by Voxy AI based on user preferences",
       extractedAt: new Date().toISOString(),
       sourceQuery: sourceQuery || ""
     };
@@ -5842,8 +5824,8 @@ Follow these rules for production-grade, highly precise bulk extraction:
     ];
     if (outOfScopeKeywords.some(k => q.includes(k)) && !q.includes("voxcart") && !q.includes("store") && !q.includes("product") && !q.includes("item")) {
       return isUr
-        ? "میں والکس کارٹ کا **VoxBot AI** اسسٹنٹ ہوں۔ 🤖 میں صرف اس ویب سائٹ کے پروڈکٹس، صوتی آرڈر، پالیسیوں اور نیویگیشن سے متعلق سوالات کا جواب دیتا ہوں۔ آپ VoxCart سے متعلق کیا جاننا چاہتے ہیں؟"
-        : "I am VoxBot, your VoxCart AI Shopping Assistant! 🤖 I only answer questions related to VoxCart products, shopping features, voice ordering, policies, accounts, and website navigation. How can I help you with your VoxCart shopping today?";
+        ? "میں والکس کارٹ کا **Voxy AI** اسسٹنٹ ہوں۔ 🤖 میں اس ویب سائٹ کے تمام پروڈکٹس، صوتی آرڈر، ریسیپیز، پالیسیوں، بل اسکینر، فیڈبیک اور نیویگیشن سے متعلق سوالات میں آپ کی رہنمائی کرتا ہوں۔ آپ VoxCart سے متعلق کیا جاننا چاہتے ہیں؟"
+        : "I am Voxy AI, your VoxCart AI Shopping & Website Assistant! 🤖 I can answer any question about our products, live stock, smart recipes, OCR bill scanner, customer feedback, store policies, and website navigation. How can I help you today?";
     }
 
     const activeProds = Array.isArray(products) ? products.filter(p => p.status !== "Inactive") : [];
@@ -5853,7 +5835,7 @@ Follow these rules for production-grade, highly precise bulk extraction:
       const unitLabel = isUr ? (item.unitUr || "پیکٹ") : (item.unit || "unit");
       const stockStatus = item.stockQuantity > 0 
         ? (isUr ? `✅ اسٹاک میں دستیاب ہے (${item.stockQuantity} ${unitLabel} موجود)` : `✅ In Stock (${item.stockQuantity} ${unitLabel} available)`)
-        : (isUr ? "❌ آؤٹ آف اسٹاک (دستیاب نہیں ہے)" : "❌ Out of Stock (Currently unavailable)");
+        : (isUr ? "❌ آؤٹ آف اسٹاک (فی الوقت دستیاب نہیں ہے)" : "❌ Out of Stock (Currently unavailable)");
 
       const categoryPath = item.subcategoryName 
         ? `${item.category} > ${item.subcategoryName}`
@@ -5867,7 +5849,7 @@ Follow these rules for production-grade, highly precise bulk extraction:
       const descText = item.description || (isUr ? "خالص اور معیاری پروڈکٹ، والکس کارٹ اسٹور کیٹلاگ پر دستیاب ہے۔" : "Fresh, premium quality grocery product available at VoxCart.");
 
       let specsSection = "";
-      if (userAskedForSpecs) {
+      if (userAskedForSpecs || q.includes("everything") || q.includes("all details") || q.includes("سب کچھ") || q.includes("مکمل تفصیل")) {
         specsSection = isUr
           ? `\n\n📋 **تکنیکی تفصیلات (Specifications):**\n- **ایس کے یو (SKU):** \`${item.sku || 'SKU-' + item.id}\`\n- **بیچ نمبر (Batch No):** \`${item.batchNumber || 'BATCH-' + item.id}\`\n- **تیاری کی تاریخ (Mfg Date):** ${item.manufacturingDate || '2026-01-15'}\n- **ایکسپائری تاریخ (Expiry Date):** ${item.expiryDate || '2027-01-15'}\n- **یونٹ:** ${unitLabel}`
           : `\n\n📋 **Product Specifications:**\n- **SKU:** \`${item.sku || 'SKU-' + item.id}\`\n- **Batch Number:** \`${item.batchNumber || 'BATCH-' + item.id}\`\n- **Manufacturing Date:** ${item.manufacturingDate || '2026-01-15'}\n- **Expiry Date:** ${item.expiryDate || '2027-01-15'}\n- **Unit:** ${unitLabel}`;
@@ -5880,6 +5862,121 @@ Follow these rules for production-grade, highly precise bulk extraction:
       return `🛍️ **${item.name}** ${item.nameUr ? `*(${item.nameUr})*` : ''}\n\n- 🏷️ **Price:** **${fmt(item)}** (${item.price} PKR) per ${unitLabel}${saleText}\n- 📦 **Availability:** ${stockStatus}\n- 📌 **Category:** ${categoryPath}\n- 🏢 **Brand:** ${brandText}\n- 📝 **Description:** ${descText}${specsSection}\n\n💡 **How to Buy:**\nYou can find and add **${item.name}** to your cart from the **Catalog** tab, or tap the microphone in the header and say *"Add ${item.name} to cart"*!`;
     };
 
+    // 2. "WHAT'S NEW ON THE WEBSITE" & ANNOUNCEMENTS
+    if (q.includes("what's new") || q.includes("whats new") || q.includes("what is new") || q.includes("new feature") || q.includes("new on the website") || q.includes("نیا کیا ہے") || q.includes("نئے فیچرز") || q.includes("تازہ ترین")) {
+      return isUr
+        ? "✨ **والکس کارٹ پر نئی سہولیات اور فیچرز (What's New on VoxCart):**\n\n" +
+          "1. 📷 **AI بل اور لسٹ اسکینر (Bill Scanner):** کاغذی بل یا ہاتھ سے لکھی شاپنگ لسٹ کی تصویر اپ لوڈ کریں؛ AI خودکار طور پر اشیاء پڑھ کر کارٹ میں شامل کر دیتا ہے۔ یہ **Voice Assistant** پیج پر دستیاب ہے۔\n" +
+          "2. 💬 **کسٹمر فیڈبیک و ایڈمن ریپلائی (Customer Feedback):** اب آپ ستارہ ریٹنگ اور رائے درج کر سکتے ہیں، اور ایڈمن ٹیم کے سرکاری جوابات اور حل کا اسٹیٹس براہ راست **Customer Feedback** ٹیب پر دیکھ سکتے ہیں۔\n" +
+          "3. 🍲 **سمارٹ ریسپی ڈراپ ڈاؤن و آٹومیشن (Recipe Dropdown):** **Catalog** ٹیب میں ریسپی منتخب کریں (جیسے بریانی، کڑاہی، پاستا) اور 1 کلک میں تمام دستیاب اجزاء کارٹ میں ڈالیں۔\n" +
+          "4. 🤖 **ووکسی AI اسسٹنٹ (Voxy AI):** ویب سائٹ کی لائیو معلومات، پروڈکٹ موازنہ، دستیابی کی جانچ، اور درست خریداری رہنمائی فراہم کرنے والا جدید ترین اسسٹنٹ!"
+        : "✨ **What's New on VoxCart:**\n\n" +
+          "1. 📷 **AI Bill & Receipt Scanner:** Upload any grocery bill photo or handwritten list to auto-extract and add items directly to your cart (**Voice Assistant** page).\n" +
+          "2. 💬 **Customer Feedback & Admin Resolution:** Share ratings (1-5 stars), post reviews or suggestions, and track official verified admin replies with status badges on the **Customer Feedback** page.\n" +
+          "3. 🍲 **Smart Recipe Dropdown & Automation:** In the **Catalog** tab, explore top dishes (Biryani, Karahi, Pasta, Pizza, Cake, etc.) to view step-by-step prep and add all required ingredients in 1-click.\n" +
+          "4. 🤖 **Voxy AI Assistant:** Upgraded 3D assistant with full real-time awareness of our entire catalog, live stock availability, product comparisons, recommendations, and policy guidance!";
+    }
+
+    // 2b. PRODUCT COMPARISON ("What is the difference between A and B?", "Compare A and B")
+    const isComparisonQuery = (
+      q.includes("difference between") || q.includes("compare") || q.includes("vs") || q.includes("versus") ||
+      q.includes("فرق") || q.includes("موازنہ") || q.includes("بہتر کون")
+    );
+    if (isComparisonQuery) {
+      const matchedComp = activeProds.filter(p => {
+        const pName = (p.name || "").toLowerCase();
+        const pUr = (p.nameUr || "").toLowerCase();
+        return (pName && q.includes(pName)) || (pUr && q.includes(pUr)) || (p.category && q.includes(p.category.toLowerCase()));
+      });
+
+      if (matchedComp.length >= 2) {
+        const p1 = matchedComp[0];
+        const p2 = matchedComp[1];
+        const p1Stock = p1.stockQuantity > 0 ? (isUr ? `✅ اسٹاک (${p1.stockQuantity})` : `✅ In Stock (${p1.stockQuantity})`) : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+        const p2Stock = p2.stockQuantity > 0 ? (isUr ? `✅ اسٹاک (${p2.stockQuantity})` : `✅ In Stock (${p2.stockQuantity})`) : (isUr ? "❌ آؤٹ آف اسٹاک" : "❌ Out of Stock");
+
+        return isUr
+          ? `⚖️ **پروڈکٹ کا موازنہ: ${p1.name} بمقابلہ ${p2.name}**\n\n` +
+            `1. **${p1.name}** (${p1.nameUr || ''}):\n` +
+            `   - 🏷️ قیمت: **${fmt(p1)}** (${p1.price} PKR) فی ${p1.unitUr || p1.unit || 'یونٹ'}\n` +
+            `   - 📌 کیٹیگری: ${p1.category} | برانڈ: ${p1.brandName || 'General'}\n` +
+            `   - 📦 دستیابی: ${p1Stock}\n` +
+            `   - 📝 خصوصیت: ${p1.description || 'اعلیٰ معیار'}\n\n` +
+            `2. **${p2.name}** (${p2.nameUr || ''}):\n` +
+            `   - 🏷️ قیمت: **${fmt(p2)}** (${p2.price} PKR) فی ${p2.unitUr || p2.unit || 'یونٹ'}\n` +
+            `   - 📌 کیٹیگری: ${p2.category} | برانڈ: ${p2.brandName || 'General'}\n` +
+            `   - 📦 دستیابی: ${p2Stock}\n` +
+            `   - 📝 خصوصیت: ${p2.description || 'اعلیٰ معیار'}\n\n` +
+            `💡 **نتیجہ:** دونوں پروڈکٹس **Catalog** ٹیب میں دستیاب ہیں!`
+          : `⚖️ **Product Comparison: ${p1.name} vs ${p2.name}**\n\n` +
+            `1. **${p1.name}**:\n` +
+            `   - 🏷️ **Price:** **${fmt(p1)}** (${p1.price} PKR) / ${p1.unit || 'unit'}\n` +
+            `   - 📌 **Category:** ${p1.category} | **Brand:** ${p1.brandName || 'General'}\n` +
+            `   - 📦 **Stock Status:** ${p1Stock}\n` +
+            `   - 📝 **Details:** ${p1.description || 'Premium quality'}\n\n` +
+            `2. **${p2.name}**:\n` +
+            `   - 🏷️ **Price:** **${fmt(p2)}** (${p2.price} PKR) / ${p2.unit || 'unit'}\n` +
+            `   - 📌 **Category:** ${p2.category} | **Brand:** ${p2.brandName || 'General'}\n` +
+            `   - 📦 **Stock Status:** ${p2Stock}\n` +
+            `   - 📝 **Details:** ${p2.description || 'Premium quality'}\n\n` +
+            `💡 **Summary:** Both items can be browsed and added to your cart in the **Catalog** tab!`;
+      }
+    }
+
+    // 2c. RECOMMENDATIONS & "BEST PRODUCT FOR ME"
+    const isRecommendationQuery = (
+      q.includes("best for me") || q.includes("which product") || q.includes("recommend") || q.includes("suggestion") ||
+      q.includes("what should i buy") || q.includes("کون سا بہتر") || q.includes("تجویز") || q.includes("مشورہ")
+    );
+    if (isRecommendationQuery) {
+      const inStockItems = activeProds.filter(p => p.stockQuantity > 0);
+      const topPicks = inStockItems.slice(0, 4).map(p => 
+        `• **${p.name}** (${fmt(p)} / ${p.unit || 'unit'}): ${p.description || p.category}`
+      ).join("\n");
+
+      return isUr
+        ? `🌟 **آپ کے لیے والکس کارٹ کی بہترین تجاویز:**\n\n${topPicks}\n\n💡 آپ اپنی پسند، بجٹ یا مخصوص ڈش کے بارے میں بتائیں تاکہ میں مزید موزوں اشیاء تجویز کر سکوں!`
+        : `🌟 **Top Recommended Products for You:**\n\n${topPicks}\n\n💡 Tell me your preferred category (e.g. Dairy, Fruits, Meat, Pantry) or budget to get tailored recommendations!`;
+    }
+
+    // 2d. GENERAL POLICIES INQUIRY
+    if (q.includes("policy") || q.includes("policies") || q.includes("rules") || q.includes("پالیسی") || q.includes("پالیسیاں") || q.includes("قوانین")) {
+      return isUr
+        ? "📜 **والکس کارٹ کی تمام کسٹمر پالیسیاں (Store Policies):**\n\n" +
+          "1. 🚚 **ڈیلیوری:** آرڈرز 24 سے 48 گھنٹوں میں پہنچائے جاتے ہیں۔ $10 یا PKR 2,000 سے زائد پر ڈیلیوری **بالکل مفت** ہے۔\n" +
+          "2. 🔄 **واپسی و ریفنڈ:** تازہ گروسری کے لیے 24 گھنٹے کا ریٹرن وقت ہے۔ رقم 3-5 کاروباری دنوں میں واپس کر دی جاتی ہے۔\n" +
+          "3. 💳 **ادائیگی کے طریقے:** کیش آن ڈیلیوری (COD)، کریڈٹ/ڈیبٹ کارڈ، ایزی پیسہ، جیز کیش، اور بینک ٹرانسفر۔\n" +
+          "4. 💬 **کسٹمر فیڈبیک:** آپ **Customer Feedback** ٹیب پر کسی بھی وقت اپنی شکایت یا رائے درج کر سکتے ہیں!"
+        : "📜 **VoxCart Customer Policies Overview:**\n\n" +
+          "1. 🚚 **Delivery Policy:** Standard delivery takes 24-48 hours. Orders over $10 USD (or PKR 2,000) qualify for **100% FREE delivery**.\n" +
+          "2. 🔄 **Returns & Refund Policy:** 24-hour return window for fresh items. Refunds are processed to your original payment method in 3-5 business days.\n" +
+          "3. 💳 **Payment Methods:** Cash on Delivery (COD), Visa/MasterCard, EasyPaisa, JazzCash, and Direct Bank Transfer.\n" +
+          "4. 💬 **Customer Support & Feedback:** Submit feedback or complaints on the **Customer Feedback** page for direct administrative review and resolution!";
+    }
+
+    // WEBSITE OVERVIEW & PAGES GUIDE ("Show all pages", "How does the website work?")
+    if (q.includes("all pages") || q.includes("website structure") || q.includes("how website works") || q.includes("overview of website") || q.includes("pages list") || q.includes("پیجز") || q.includes("تمام پیجز")) {
+      return isUr
+        ? "🗺️ **والکس کارٹ ویب سائٹ کے تمام پیجز اور خصوصیات (Website Pages Overview):**\n\n" +
+          "1. 🏠 **Home Page ('home'):** مین اسٹور شوکیس، لائیو کرنسی لسٹ، ڈیل ہب ڈسکاؤنٹس، اور وائس اسسٹنٹ ہائی لائٹس۔\n" +
+          "2. 🛍️ **Catalog / Browse ('browse'):** تمام گروسری اشیاء، کیٹیگریز و برانڈز فلٹرز، پرائس سلائیڈر، اور سمارٹ ریسپی سرچ۔\n" +
+          "3. 🎙️ **Voice Assistant ('voice'):** اردو و انگریزی صوتی شاپنگ ڈکٹیشن اور تصویر سے کاغذی بل اسکینر (OCR)۔\n" +
+          "4. ❤️ **Saved Favourites ('wishlist'):** آپ کی محفوظ کردہ پسندیدہ اشیاء۔\n" +
+          "5. 🧾 **Orders & Receipts ('orders'):** لائیو آرڈر اسٹیٹس ٹریکنگ اور PDF انوائس ڈاؤن لوڈ۔\n" +
+          "6. 💬 **Customer Feedback ('feedback'):** ستارہ ریٹنگ، گاہکوں کے تبصرے اور ایڈمن کے سرکاری جوابات۔\n" +
+          "7. 💳 **Checkout & Payment ('payment'):** ایڈریس، کوپن کوڈ اور ادائیگی کے طریقے (COD, Cards, EasyPaisa, JazzCash, Bank Transfer)۔\n" +
+          "8. ⚙️ **Admin Panel ('admin'):** اسٹور ایڈمنز کے لیے پروڈکٹس، کیٹیگریز، کرنسی، فیڈبیک اور آرڈرز مینجمنٹ۔"
+        : "🗺️ **Complete VoxCart Website Pages & Features Guide:**\n\n" +
+          "1. 🏠 **Home Page ('home'):** Store showcase, live currency ticker, deal hub discounts, category shortcuts, and review highlights.\n" +
+          "2. 🛍️ **Catalog / Browse ('browse'):** Browse all groceries, filter by category/brand, adjust price slider, or select smart recipes.\n" +
+          "3. 🎙️ **Voice Assistant ('voice'):** Hands-free voice shopping in English/Urdu and AI Bill/Receipt Photo Scanner (OCR).\n" +
+          "4. ❤️ **Saved Favourites ('wishlist'):** View bookmarked favorite products and add them to cart in 1-click.\n" +
+          "5. 🧾 **Orders & Receipts ('orders'):** Live order progress tracking (Pending ➔ Delivered) and downloadable PDF invoices.\n" +
+          "6. 💬 **Customer Feedback ('feedback'):** Submit 1-5 star ratings, post reviews, and view official verified admin replies.\n" +
+          "7. 💳 **Checkout & Payment ('payment'):** Enter delivery address, apply coupon codes, and select payment methods (COD, Card, EasyPaisa, JazzCash, Bank Transfer).\n" +
+          "8. ⚙️ **Admin Console ('admin'):** Store management for inventory, stock levels, categories, exchange rates, order status, and feedback resolution.";
+    }
+
     // 2. WEBSITE FEATURES, INSTRUCTIONS & NAVIGATION (HIGH PRIORITY - Check before generic product word matches)
 
     // Customer Feedback, Reviews & Ratings
@@ -5887,6 +5984,41 @@ Follow these rules for production-grade, highly precise bulk extraction:
       return isUr
         ? "💬 **گاہکوں کی رائے اور فیڈ بیک کا طریقہ (Customer Feedback & Reviews):**\n1. نیویگیشن بار میں **Customer Feedback** ٹیب پر جائیں۔\n2. اپنا نام، ای میل، ریٹنگ (1 سے 5 ستارے)، کیٹیگری (Service, Quality, Delivery, Website, Pricing, Other)، اور تفصیلی رائے یا شکایت درج کریں۔\n3. **'Submit Feedback'** پر کلک کریں۔ آپ کی رائے محفوظ ہو جائے گی اور ایڈمن ٹیم کا جواب بھی آپ کو اسی پیج پر نظر آئے گا!\n4. ایڈمن اپنے پینل سے ہر فیڈبیک کا جائزہ لے کر سرکاری جواب اور اسٹیٹس اپ ڈیٹ کر سکتا ہے۔"
         : "💬 **How the Customer Feedback & Reviews Feature Works:**\n1. Navigate to the **Customer Feedback** tab in the main navigation bar.\n2. Enter your name, email, star rating (1-5 stars), feedback category (Service, Quality, Delivery, Website, Pricing, Other), and your detailed comments or complaints.\n3. Click **'Submit Feedback'** to submit. Your feedback is recorded in the system, and you can view published reviews along with official administrative replies and resolution status!\n4. Store administrators can also manage and respond directly from the Admin Feedback Management panel.";
+    }
+
+    // TROUBLESHOOTING: Microphone & Voice Issues
+    if (q.includes("mic not working") || q.includes("microphone error") || q.includes("voice issue") || q.includes("cannot hear") || q.includes("voice failed") || q.includes("مائیک کام نہیں کر رہا")) {
+      return isUr
+        ? "🛠️ **مائیکروفون کام نہ کرنے کا حل (Voice Troubleshooting):**\n1. براؤزر کے ایڈریس بار میں لاک/مائیک ائیکن پر کلک کر کے مائیکروفون اجازت (Allow Microphone) یقینی بنائیں۔\n2. یقینی بنائیں کہ کوئی اور ایپ مائیک استعمال نہ کر رہی ہو۔\n3. بہترین وائس ریکگنیشن کے لیے Google Chrome یا Microsoft Edge استعمال کریں۔"
+        : "🛠️ **Microphone & Voice Assistant Troubleshooting:**\n1. Ensure browser microphone permissions are set to **Allow** in your browser's address bar.\n2. Check that no other application is currently locking your microphone.\n3. For best Web Speech API performance, use Google Chrome, Microsoft Edge, or Safari.";
+    }
+
+    // TROUBLESHOOTING: Receipt Scanner Issues
+    if (q.includes("scanner issue") || q.includes("receipt failed") || q.includes("cannot scan") || q.includes("ocr error") || q.includes("اسکینر مسئلہ")) {
+      return isUr
+        ? "🛠️ **بل اسکینر کا مسئلہ حل کرنے کا طریقہ:**\n1. تصویر صاف، روشن اور سیدھی ہونی چاہیے۔\n2. کاغذی بل یا لکھی ہوئی لسٹ پر نام اور مقدار واضح ہونی چاہیے۔\n3. بہتر رزلٹ کے لیے دوبارہ ایچ ڈی (HD) تصویر اپ لوڈ کریں۔"
+        : "🛠️ **OCR Bill Scanner Troubleshooting:**\n1. Ensure the photo is clear, properly lit, and not blurry or rotated.\n2. Verify that item names and quantities on the paper bill/list are legible.\n3. Re-upload a higher resolution image for maximum OCR accuracy.";
+    }
+
+    // TROUBLESHOOTING: Out of Stock
+    if (q.includes("out of stock") || q.includes("sold out") || q.includes("unavailable product") || q.includes("اسٹاک ختم")) {
+      return isUr
+        ? "📦 **آؤٹ آف اسٹاک پروڈکٹس کے بارے میں:**\nوالکس کارٹ کا اسٹور سسٹم لائیو اسٹاک اپ ڈیٹ کرتا ہے۔ اگر کوئی پروڈکٹ آؤٹ آف اسٹاک ہے تو اسے فی الوقت کارٹ میں شامل نہیں کیا جا سکتا۔ ایڈمن ٹیم جلد اسٹاک دوبارہ شامل کر دیتی ہے۔ آپ ووکسی AI سے متبادل پروڈکٹس کی تجاویز مانگ سکتے ہیں!"
+        : "📦 **Out of Stock & Inventory Resolution:**\nVoxCart tracks real-time inventory. When stock reaches 0, the item is marked Out of Stock to prevent unfulfillable orders. Store admins restock items regularly. You can ask Voxy AI for alternative available products in the same category!";
+    }
+
+    // TROUBLESHOOTING: Login / Password Reset
+    if (q.includes("forgot password") || q.includes("reset password") || q.includes("cannot login") || q.includes("login issue") || q.includes("پاس ورڈ بھول گئے")) {
+      return isUr
+        ? "🔑 **لاگ ان اور پاس ورڈ ری سیٹ کا طریقہ:**\n1. ہیڈر میں Account آئیکن پر کلک کریں۔\n2. **Forgot Password** منتخب کریں اور اپنا رجسٹرڈ ای میل درج کریں۔\n3. ای میل پر آنے والا ویریفیکیشن کوڈ درج کر کے نیا مضبوط پاس ورڈ سیٹ کریں۔"
+        : "🔑 **Account Login & Password Reset Assistance:**\n1. Click the User/Account icon in the top header bar.\n2. Click **Forgot Password / Reset Password** and enter your registered email address.\n3. Enter the 6-digit email verification code sent to you to establish a new strong password!";
+    }
+
+    // TROUBLESHOOTING: Coupon / Payment Error
+    if (q.includes("coupon error") || q.includes("payment error") || q.includes("payment failed") || q.includes("کوپن مسئلہ")) {
+      return isUr
+        ? "💳 **کوپن اور پیمنٹ کے مسائل کا حل:**\n1. کوپن کوڈ بغیر کسی اسپیس کے درستی سے درج کریں۔\n2. چیک کریں کہ کارٹ میں کم از کم مطلوبہ رقم پوری ہے۔\n3. اگر کارڈ یا آن لائن پیمنٹ فیل ہو تو Cash on Delivery (COD) منتخب کر کے آرڈر مکمل کریں۔"
+        : "💳 **Coupon & Payment Error Resolution:**\n1. Double check that the promo code is spelled correctly without extra spaces.\n2. Ensure your cart meets any minimum order requirements for discounts.\n3. If an online payment fails, switch to Cash on Delivery (COD) to complete your order smoothly!";
     }
 
     // Add to Favorites / Wishlist / Bookmarks
@@ -6418,7 +6550,7 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
             name: cand.name,
             nameUr: cand.nameUr,
             icon: cand.icon,
-            description: `Auto-extracted by VoxBot AI based on: "${message.slice(0, 40)}"`,
+            description: `Auto-extracted by Voxy AI based on: "${message.slice(0, 40)}"`,
             extractedAt: new Date().toISOString(),
             sourceQuery: message
           });
@@ -6516,58 +6648,66 @@ Return ONLY valid JSON without markdown wrapping or code blocks.`;
             }
           });
 
-          const systemInstruction = `You are VoxBot, the cute, friendly, and highly intelligent AI shopping guide and customer support assistant for VoxCart.
+          const systemInstruction = `You are Voxy AI (or Voxy), the intelligent, friendly, and comprehensive AI shopping guide and website assistant for VoxCart.
 VoxCart is a bilingual (English & Urdu) voice-activated online grocery & department store.
 
-CRITICAL INSTRUCTIONS & ACCURACY MANDATES:
-1. PRODUCT SEARCH & SPECIFIC INQUIRIES:
-   - When a user searches for or asks about a product (e.g. 'Whole Milk', 'tell me about apples', 'do you have bananas', 'price of cheddar cheese', etc.):
-     • Show ONLY that specific matching product's MINIMAL AND RELEVANT details. Do NOT output unnecessary information or flood the user with internal codes unless they explicitly ask for them.
-     • Format the product cleanly:
-       - 🛍️ **Product Name** (English and Urdu)
-       - 🏷️ **Price** (formatted in active currency and base PKR, plus sale price if on sale)
-       - 📦 **Availability & Stock** (e.g. '✅ In Stock: 115 gallons available' or '❌ Out of Stock')
-       - 📌 **Category & Subcategory**
-       - 🏢 **Brand** (if specified)
-       - 📝 **Description** (1-2 concise, clear sentences)
-       - 💡 **How to Buy**: Brief hint on finding it in the **Catalog** tab or saying *"Add [Product] to cart"* via Voice Assistant.
-     • DO NOT include SKU, Batch Number, or Manufacturing Date in standard product responses UNLESS the user explicitly asks for technical specifications (e.g., 'what is the SKU?', 'when does it expire?', 'what is the batch number?', 'give me technical specs'). If the user asks for SKU/expiry/batch specifically, provide those exact details accurately.
-     • Do NOT mention or list unrelated items when a specific product is requested.
+CRITICAL ASSISTANT MANDATES & ACCURACY RULES:
+1. COMPLETE WEBSITE AWARENESS & REAL-TIME DATA:
+   - You have complete awareness of all website pages, navigation tabs, products, stock status, features, policies, recipes, and services.
+   - All product answers must reflect the LIVE STORE PRODUCTS data provided below.
+   - Real-time stock status: If stockQuantity > 0, state it is in stock with the available count. If stockQuantity <= 0 or status is Unavailable/Inactive, clearly state that it is currently Out of Stock / Unavailable.
 
-2. CATEGORY ISOLATION & EXACT RELEVANCE:
-   - If a user asks about a specific category (e.g. 'fruits', 'tell me about fruits', 'what fruits do you have?', 'what vegetables do you have?', 'show me dairy items', 'what meat do you sell?', etc.):
-     • You MUST answer with ONLY the products belonging to that specific category!
-     • For example, if asked about fruits, list ONLY fruit products (such as Fresh Red Apples, Organic Bananas, Juicy Oranges, Fresh Strawberries) with their prices and stock.
-     • DO NOT list or mention vegetables, meat, dairy, pantry items, or any unrelated categories.
-   - If a user asks for 'all categories' or 'categories list', list all available store categories and subcategories cleanly without dumping entire product lists.
+2. ANTI-HALLUCINATION GUARANTEE (CRITICAL):
+   - If a user asks for a product, brand, service, or piece of information that is NOT present in the provided Live Store Products or Website Knowledge Base, you MUST explicitly and politely state that it is not available or not carried on VoxCart.
+   - NEVER invent or hallucinate non-existent products, prices, or policies.
 
-3. FEATURE PURITY & WEBSITE EXPLANATIONS:
-   - If a user asks about a specific website feature (e.g., 'feedback feature', 'how does customer feedback work?', 'how do I use recipe search?', 'how does voice shopping work?', 'how do I track my order?', 'what are the delivery policies?'):
-     • Explain THAT EXACT FEATURE comprehensively, step-by-step, and clearly.
-     • DO NOT output unrelated product cards or product listings.
+3. PRODUCT COMPARISONS ("What is the difference between A and B?"):
+   - When asked to compare two or more products or explain their differences:
+     • Provide a structured, clear side-by-side comparison.
+     • Compare Price (in active currency and PKR), Categories/Subcategories, Brand, Specifications/Ingredients, and current Live Stock availability.
+     • Summarize the practical differences or best use cases for each.
 
-4. AUTOMATIC UNDERSTANDING OF ALL WEBSITE FEATURES & UPDATES:
-   - Understand and accurately guide users on ALL website features and newly added options:
-     - 💬 **Customer Feedback & Reviews** ("feedback" tab): Users can submit star ratings (1-5 stars), write reviews, file complaints, and view official admin replies with resolution status. In the Admin panel, admins can respond to customer feedback directly.
-     - 🍲 **Smart Recipe Section & Search** ("browse" tab): Search any dish name (e.g., *Biryani, Karahi, Nihari, Pasta, Pizza, Cake, Burger, Kheer, Chai, Fried Rice*, etc.) in the Catalog search bar to view preparation time, step-by-step cooking steps, and a 1-click **'Add All Recipe Ingredients'** button to put all required grocery items in the cart.
-     - 🎙️ **Voice Shopping Assistant** ("voice" tab): Speak naturally in English, Urdu (اردو), or Roman Urdu to add items to cart (e.g., *"Add 2 milk and 1 bread"*).
-     - 📷 **AI Bill / Invoice OCR Scanner** ("voice" tab): Upload a physical receipt photo or handwritten list to auto-extract items into the shopping cart.
-     - ❤️ **Saved Favourites / Wishlist** ("wishlist" tab): Click the heart icon (❤️) on any item to save it for quick reordering.
-     - 🧾 **Orders & PDF Invoices** ("orders" tab): Real-time order tracking (Pending ➔ Shipped ➔ Delivered) and 1-click PDF invoice download/print.
-     - 💳 **Checkout & Payment Methods** ("payment" tab): Cash on Delivery (COD), Credit/Debit Card, Mobile Wallets (EasyPaisa, JazzCash), Bank Transfer, plus promo/coupon code discounts.
-     - 🚚 **Delivery & Policy**: Standard 24-48 hours delivery. FREE shipping on orders over $10 USD / PKR 2,000. 24-hour return window for fresh items.
-     - 🌐 **Bilingual & Multi-Currency**: Instant toggle between English & Urdu, and live rates for USD ($), PKR (₨), EUR (€), GBP (£), SAR (﷼), AED (د.إ).
-     - 👑 **Admin Console** ("admin" tab): Store management for products, stock, categories, subcategories, brands, units, feedback replies, and analytics (default login: admin@voxcart.com / admin).
-     - 👤 **Accounts & Security**: Email verification codes, password resets with strong password criteria, and guest checkout.
-     - 🏷️ **Dynamic Categories**: Live sync of store categories, subcategories, and user-extracted AI categories.
+4. PRODUCT RECOMMENDATIONS & SHOPPING ADVICE ("Which product would be best for me?"):
+   - Recommend products from the live inventory based on user preferences, dietary needs, budget, or meal type.
+   - Provide clear, genuine reasons for each recommendation (e.g. freshness, nutritional value, recipe match).
 
-5. NATURAL LANGUAGE & FOLLOW-UP QUESTIONS:
-   - Seamlessly maintain conversational context across turns.
-   - If the user asks a follow-up question (e.g., 'how much is it?', 'is it in stock?', 'when does it expire?', 'how do I add it?'), resolve the pronoun/reference from the previous chat history and answer clearly.
+5. "WHAT'S NEW ON THE WEBSITE" & NEW FEATURES:
+   - When asked "What's new on the website?" or about new features, highlight:
+     • 📷 **AI Bill Scanner (OCR)**: Upload physical grocery receipts or handwritten shopping lists to auto-extract items to the cart (located on the **Voice Assistant** page).
+     • 💬 **Customer Feedback & Admin Resolution**: Submit 1-5 star ratings, feedback, and view official verified admin replies with status badges (located in the **Customer Feedback** tab).
+     • 🍲 **Smart Recipe Dropdown & Automation**: Search or select top dishes (Biryani, Karahi, Pasta, Pizza, Cake, etc.) in the **Catalog** tab to view live ingredient availability and add all in-stock ingredients with 1 click.
+     • 🤖 **Voxy AI Autonomous Shopping Assistant**: 3D conversational guide with real-time catalog awareness, stock tracking, voice shopping, and comparisons.
 
-6. MANUAL USER QUESTIONS & ACCURACY:
-   - Answer any manual question about the website accurately, politely, and helpfully based on actual website content.
-   - If the question is outside the scope of VoxCart (such as unrelated world trivia or math homework), politely state your role as VoxCart's shopping and support guide.
+6. SPECIFIC PRODUCT INQUIRIES ("Tell me everything about this product", "How much does X cost?"):
+   - For standard product questions, format the product cleanly:
+     - 🛍️ **Product Name** (English and Urdu)
+     - 🏷️ **Price** (active currency and base PKR, plus sale price if on sale)
+     - 📦 **Availability & Live Stock** (e.g. '✅ In Stock: 115 available' or '❌ Out of Stock')
+     - 📌 **Category & Subcategory**
+     - 🏢 **Brand**
+     - 📝 **Description**
+     - 💡 **How to Buy**: Hint on finding it in the **Catalog** tab or saying *"Add [Product] to cart"* via Voice Shopping.
+   - If the user asks "Tell me everything" or asks for technical specs (SKU, batch number, expiry date, manufacturing date), include the full specification details accurately.
+
+7. CATEGORY QUERIES:
+   - When asked about a specific category (e.g. 'fruits', 'dairy', 'meat', 'vegetables', 'beverages', 'pantry'), list ONLY the products in that specific category with prices and stock. Do NOT mix in unrelated categories.
+
+8. POLICIES & CUSTOMER SUPPORT:
+   - 🚚 **Delivery**: 24-48 hours delivery time. Orders over $10 USD / PKR 2,000 get **100% FREE shipping**.
+   - 🔄 **Returns & Refunds**: 24-hour return window for fresh items. Refunds processed in 3-5 business days.
+   - 💳 **Payment Methods**: Cash on Delivery (COD), Credit/Debit Card, EasyPaisa, JazzCash, and Bank Transfer.
+   - 💬 **Feedback**: Users can submit reviews on the **Customer Feedback** page.
+
+9. NAVIGATION & HOW-TO GUIDANCE:
+   - Guide users to the exact tab/section:
+     • **Home** ("home"): Featured deals, category shortcuts, feedback showcase.
+     • **Catalog / Browse** ("browse"): All aisles, category/brand filters, price slider, recipe dropdown.
+     • **Voice Assistant** ("voice"): Voice dictation & AI Bill/Receipt Scanner.
+     • **Saved Favourites** ("wishlist"): Hearted items.
+     • **Orders** ("orders"): Live order tracking & PDF invoice download.
+     • **Customer Feedback** ("feedback"): Reviews & admin replies.
+     • **Checkout** ("payment"): Address & payment processing.
+     • **Admin Console** ("admin"): Store management.
 
 VOXCART WEBSITE KNOWLEDGE BASE:
 1. PAGES & NAVIGATION:
